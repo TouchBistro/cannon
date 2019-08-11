@@ -1,0 +1,23 @@
+repos:
+  - TouchBistro/touchbistro-node-boilerplate
+  - TouchBistro/ordering-deliveroo-service
+actions:
+  - type: replaceLine
+    source: DB_USER=core
+    target: DB_USER=SA
+    path: .env.example
+  - type: replaceText
+    source: LOGGER.debug
+    target: console.log
+    path: .env.example
+  - type: createFile
+    source: files/text.txt
+    path: text.txt
+  - type: deleteFile
+    path: .env.example
+  - type: replaceFile
+    source: files/.env.test
+    path: .env.compose
+  - type: createOrReplaceFile
+    source: files/.env.test
+    path: .env.test
