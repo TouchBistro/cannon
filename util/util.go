@@ -1,6 +1,7 @@
 package util
 
 import (
+	"io/ioutil"
 	"os"
 
 	"github.com/pkg/errors"
@@ -12,6 +13,17 @@ func FileOrDirExists(path string) bool {
 		return false
 	}
 	return true
+}
+
+func CopyFile(fromPath, toPath string) error {
+	// Do lazy way for now, can optimize later if needed
+	data, err := ioutil.ReadFile(fromPath)
+	if err != nil {
+		return errors.Wrapf(err, "failed to read file %s", fromPath)
+	}
+
+	err = ioutil.WriteFile(toPath, data, 0644)
+	return errors.Wrapf(err, "failed to write file %s", toPath)
 }
 
 func ReadYaml(path string, val interface{}) error {
