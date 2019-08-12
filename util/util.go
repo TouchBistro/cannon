@@ -1,8 +1,10 @@
 package util
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
+	"os/exec"
 
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
@@ -36,4 +38,15 @@ func ReadYaml(path string, val interface{}) error {
 	dec := yaml.NewDecoder(file)
 	err = dec.Decode(val)
 	return errors.Wrapf(err, "failed to decode yaml file %s", path)
+}
+
+func ExecOutput(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
+	err := cmd.Run()
+	return stdout.String(), errors.Wrapf(err, "exec failed for command %s: %s", name, stderr.String())
 }

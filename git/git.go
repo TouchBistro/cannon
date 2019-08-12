@@ -3,7 +3,9 @@ package git
 import (
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/TouchBistro/cannon/util"
 	"github.com/pkg/errors"
 	"gopkg.in/src-d/go-git.v4"
 )
@@ -36,8 +38,22 @@ func Pull(w *git.Worktree, name string) error {
 	return errors.Wrapf(err, "failed to pull changes from remote for repo %s", name)
 }
 
-func PullRequest(repo, branch string) {
+func PullRequest(repo, branch string) string {
 	// TODO make this use the github api to actually create the PR
-	url := fmt.Sprintf("https://github.com/%s/pull/new/%s", repo, branch)
-	fmt.Printf("Pull Request URL for %s is: %s\n", repo, url)
+	return fmt.Sprintf("https://github.com/%s/pull/new/%s", repo, branch)
+}
+
+func User() (string, string, error) {
+	args := []string{"config", "--get", "--global"}
+	nameOutput, err := util.ExecOutput("git", append(args, "user.name")...)
+	if err != nil {
+		return "", "", errors.Wrap(err, "failed to get git user name")
+	}
+
+	emailOutput, err := util.ExecOutput("git", append(args, "user.email")...)
+	if err != nil {
+		return "", "", errors.Wrap(err, "failed to get git user email")
+	}
+
+	return strings.TrimSpace(nameOutput), strings.TrimSpace(emailOutput), nil
 }

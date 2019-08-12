@@ -21,17 +21,15 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
+const (
+	greenColor = "\x1b[32m"
+	resetColor = "\x1b[0m"
+)
+
 var (
 	configPath    string
 	commitMessage string
 )
-
-func printRepos(repos []string) {
-	fmt.Println("Affected repos:")
-	for _, repo := range repos {
-		fmt.Printf("- %s\n", repo)
-	}
-}
 
 // Make sure repo is on master with latest changes
 func prepareRepo(repo string) (*git.Repository, *git.Worktree, error) {
@@ -152,10 +150,15 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 		return errors.Wrapf(err, "failed to stage change files in repo %s", repo)
 	}
 
+	name, email, err := g.User()
+	if err != nil {
+		return errors.Wrap(err, "failed to get git user info")
+	}
+
 	_, err = w.Commit(commitMessage, &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  "Christopher Szatmary",
-			Email: "cs@christopherszatmary.com",
+			Name:  name,
+			Email: email,
 			When:  time.Now(),
 		},
 	})
@@ -165,7 +168,6 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 
 	err = r.Push(&git.PushOptions{
 		RemoteName: "origin",
-		Progress:   os.Stdout,
 	})
 	return errors.Wrapf(err, "failed to push changes to remote for repo %s", repo)
 }
@@ -190,11 +192,14 @@ func main() {
 	}
 
 	conf := config.Config()
-	printRepos(conf.Repos)
+	fmt.Println("Affected repos:")
+	for _, repo := range conf.Repos {
+		fmt.Printf("- %s\n", repo)
+	}
 
 	// Have user confirm changes
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Confirm running with these parameters (y/n): ")
+	fmt.Print("\nConfirm running with these parameters (y/n): ")
 
 	input, err := reader.ReadString('\n')
 	if err != nil {
@@ -206,6 +211,7 @@ func main() {
 		fmt.Println("Aborting")
 		os.Exit(0)
 	}
+	fmt.Println()
 
 	branchName := "cannon/change-" + uuid.NewV4().String()[0:8]
 
@@ -221,11 +227,11 @@ func main() {
 			fatal.ExitErrf(err, "Failed to perform actions on repo %s.", repo)
 		}
 
-		fmt.Printf("Successfully performed actions for repo %s\n", repo)
+		fmt.Printf("%sSuccessfully performed actions for repo %s%s\n\n", greenColor, repo, resetColor)
 	}
 
-	fmt.Println("\nPull Request links:")
+	fmt.Println("Pull Request URLs:")
 	for _, repo := range conf.Repos {
-		g.PullRequest(repo, branchName)
+		fmt.Printf("- %s: %s\n", repo, g.PullRequest(repo, branchName))
 	}
 }
