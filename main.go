@@ -6,13 +6,19 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/TouchBistro/cannon/action"
 	"github.com/TouchBistro/cannon/config"
-	"github.com/TouchBistro/cannon/git"
+	"github.com/TouchBistro/cannon/fatal"
+	g "github.com/TouchBistro/cannon/git"
 	"github.com/TouchBistro/cannon/util"
 	"github.com/pkg/errors"
+	uuid "github.com/satori/go.uuid"
 	flag "github.com/spf13/pflag"
+	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
 var (
@@ -27,27 +33,72 @@ func printRepos(repos []string) {
 	}
 }
 
-func cloneMissingRepos(repos []string) error {
-	for _, repo := range repos {
-		parts := strings.Split(repo, "/")
-		orgName := parts[0]
-		repoName := parts[1]
-		path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
+// Make sure repo is on master with latest changes
+func prepareRepo(repo string) (*git.Repository, *git.Worktree, error) {
+	parts := strings.Split(repo, "/")
+	orgName := parts[0]
+	repoName := parts[1]
+	path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
 
-		if util.FileOrDirExists(path) {
-			fmt.Printf("Repo %s already exists\n", repo)
-			continue
-		}
+	// Repo doesn't exist, clone and then we are good to go
+	if !util.FileOrDirExists(path) {
+		fmt.Printf("Repo %s does not exist, cloning...", repo)
 
-		err := git.Clone(orgName, repoName, config.CannonDir())
+		r, w, err := g.Clone(orgName, repoName, config.CannonDir())
 		if err != nil {
-			return errors.Wrapf(err, "failed to clone repo %s", repo)
+			return nil, nil, errors.Wrapf(err, "failed to clone repo %s", repo)
 		}
 
 		fmt.Printf("Cloned repo %s to %s\n", repo, config.CannonDir())
+		return r, w, nil
 	}
 
-	return nil
+	r, err := git.PlainOpen(path)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "failed to open repo at path %s", path)
+	}
+
+	w, err := r.Worktree()
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "failed to get worktree for repo %s", repo)
+	}
+
+	branchRef, err := r.Head()
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "failed to get HEAD for repo %s", repo)
+	}
+
+	// Discard any changes and switch to master
+	err = w.Clean(&git.CleanOptions{
+		Dir: true,
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "failed to clean repo %s", repo)
+	}
+
+	err = w.Checkout(&git.CheckoutOptions{
+		Force: true,
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "failed to switch to master branch in repo %s", repo)
+	}
+
+	// Pull latest changes
+	err = g.Pull(w, repo)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "failed to update master branch for repo %s", repo)
+	}
+
+	// Head returns refs/heads/<BRANCH>, need to get branch
+	refParts := strings.Split(string(branchRef.Name()), "/")
+	branch := refParts[len(refParts)-1]
+	if branch == "master" {
+		return r, w, nil
+	}
+
+	// Delete old branch
+	err = r.Storer.RemoveReference(branchRef.Name())
+	return r, w, errors.Wrapf(err, "failed to delete branch %s in repo %s", branch, repo)
 }
 
 func executeAction(a config.Action, repoPath string) error {
@@ -69,6 +120,56 @@ func executeAction(a config.Action, repoPath string) error {
 	}
 }
 
+func performActions(r *git.Repository, w *git.Worktree, actions []config.Action, branchName, repo string) error {
+	headRef, err := r.Head()
+	if err != nil {
+		return errors.Wrapf(err, "failed to get HEAD for repo %s", repo)
+	}
+
+	// Create and checkout new branch
+	branchRef := plumbing.NewHashReference(plumbing.ReferenceName("refs/heads/"+branchName), headRef.Hash())
+	err = w.Checkout(&git.CheckoutOptions{
+		Hash:   branchRef.Hash(),
+		Branch: branchRef.Name(),
+		Create: true,
+	})
+	if err != nil {
+		return errors.Wrapf(err, "failed to create new branch %s in repo %s", branchName, repo)
+	}
+
+	// Execute actions
+	path := fmt.Sprintf("%s/%s", config.CannonDir(), strings.Split(repo, "/")[1])
+	for _, a := range actions {
+		err = executeAction(a, path)
+		if err != nil {
+			return errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repo)
+		}
+	}
+
+	// Commit changes and push
+	err = w.AddGlob(".")
+	if err != nil {
+		return errors.Wrapf(err, "failed to stage change files in repo %s", repo)
+	}
+
+	_, err = w.Commit(commitMessage, &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Christopher Szatmary",
+			Email: "cs@christopherszatmary.com",
+			When:  time.Now(),
+		},
+	})
+	if err != nil {
+		return errors.Wrapf(err, "failed to commit changes in repo %s", repo)
+	}
+
+	err = r.Push(&git.PushOptions{
+		RemoteName: "origin",
+		Progress:   os.Stdout,
+	})
+	return errors.Wrapf(err, "failed to push changes to remote for repo %s", repo)
+}
+
 func parseFlags() {
 	flag.StringVarP(&configPath, "path", "p", "cannon.yml", "The path to a cannon.yml config file")
 	flag.StringVarP(&commitMessage, "commit-message", "m", "", "The commit message to use")
@@ -85,8 +186,7 @@ func main() {
 
 	err := config.Init(configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed reading config file. Error: %+v\n", err)
-		os.Exit(1)
+		fatal.ExitErr(err, "Failed reading config file.")
 	}
 
 	conf := config.Config()
@@ -98,8 +198,7 @@ func main() {
 
 	input, err := reader.ReadString('\n')
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read user input. Error: %+v\n", err)
-		os.Exit(1)
+		fatal.ExitErr(err, "Failed to read user input.")
 	}
 
 	choice := strings.TrimSpace(input)
@@ -108,14 +207,25 @@ func main() {
 		os.Exit(0)
 	}
 
-	err = cloneMissingRepos(conf.Repos)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to clone missing repos. Error: %+v\n", err)
-		os.Exit(1)
+	branchName := "cannon/change-" + uuid.NewV4().String()[0:8]
+
+	// Make sure repos are up to date
+	for _, repo := range conf.Repos {
+		r, w, err := prepareRepo(repo)
+		if err != nil {
+			fatal.ExitErrf(err, "Failed to prepare repo %s.", repo)
+		}
+
+		err = performActions(r, w, conf.Actions, branchName, repo)
+		if err != nil {
+			fatal.ExitErrf(err, "Failed to perform actions on repo %s.", repo)
+		}
+
+		fmt.Printf("Successfully performed actions for repo %s\n", repo)
 	}
 
-	// branchName := "cannon/change-" + uuid.NewV4().String()[0:8]
-
-	// TODO apply changes
-	// TODO make PR
+	fmt.Println("\nPull Request links:")
+	for _, repo := range conf.Repos {
+		g.PullRequest(repo, branchName)
+	}
 }
