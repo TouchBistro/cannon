@@ -9,7 +9,7 @@ actions:
   - type: replaceText
     source: LOGGER.debug
     target: console.log
-    path: .env.example
+    path: src/index.ts
   - type: createFile
     source: files/text.txt
     path: text.txt
@@ -21,3 +21,5 @@ actions:
   - type: createOrReplaceFile
     source: files/.env.test
     path: .env.test
+  - type: runCommand
+    run: yarn

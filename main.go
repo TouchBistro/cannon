@@ -23,6 +23,7 @@ import (
 
 const (
 	greenColor = "\x1b[32m"
+	cyanColor  = "\x1b[36m"
 	resetColor = "\x1b[0m"
 )
 
@@ -113,6 +114,8 @@ func executeAction(a config.Action, repoPath string) error {
 		return action.ReplaceFile(a, repoPath)
 	case config.ActionCreateOrReplaceFile:
 		return action.CreateOrReplaceFile(a, repoPath)
+	case config.ActionRunCommand:
+		return action.RunCommand(a, repoPath)
 	default:
 		return errors.New(fmt.Sprintf("invalid action type %s", a.Type))
 	}
@@ -218,6 +221,8 @@ func main() {
 	// Make sure repos are up to date
 	for _, repo := range conf.Repos {
 		r, w, err := prepareRepo(repo)
+
+		fmt.Printf("%sRunning actions for repo %s%s\n", cyanColor, repo, resetColor)
 		if err != nil {
 			fatal.ExitErrf(err, "Failed to prepare repo %s.", repo)
 		}

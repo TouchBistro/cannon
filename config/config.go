@@ -13,6 +13,7 @@ type Action struct {
 	Source string `yaml:"source"`
 	Target string `yaml:"target"`
 	Path   string `yaml:"path"`
+	Run    string `yaml:"run"`
 }
 
 type CannonConfig struct {
@@ -27,6 +28,7 @@ const (
 	ActionDeleteFile          = "deleteFile"
 	ActionReplaceFile         = "replaceFile"
 	ActionCreateOrReplaceFile = "createOrReplaceFile"
+	ActionRunCommand          = "runCommand"
 )
 
 var (

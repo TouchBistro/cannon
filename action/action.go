@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/TouchBistro/cannon/config"
@@ -60,7 +61,7 @@ func ReplaceText(action config.Action, repoPath string) error {
 func CreateFile(action config.Action, repoPath string) error {
 	cwd, err := os.Getwd()
 	if err != nil {
-		errors.Wrap(err, "unable to get current working directory")
+		return errors.Wrap(err, "unable to get current working directory")
 	}
 	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
 
@@ -96,7 +97,7 @@ func DeleteFile(action config.Action, repoPath string) error {
 func ReplaceFile(action config.Action, repoPath string) error {
 	cwd, err := os.Getwd()
 	if err != nil {
-		errors.Wrap(err, "unable to get current working directory")
+		return errors.Wrap(err, "unable to get current working directory")
 	}
 	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
 
@@ -117,7 +118,7 @@ func ReplaceFile(action config.Action, repoPath string) error {
 func CreateOrReplaceFile(action config.Action, repoPath string) error {
 	cwd, err := os.Getwd()
 	if err != nil {
-		errors.Wrap(err, "unable to get current working directory")
+		return errors.Wrap(err, "unable to get current working directory")
 	}
 	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
 
@@ -130,4 +131,16 @@ func CreateOrReplaceFile(action config.Action, repoPath string) error {
 
 	fmt.Printf("Created or replaced file %s with %s\n", filePath, sourceFilePath)
 	return nil
+}
+
+func RunCommand(action config.Action, repoPath string) error {
+	args := strings.Fields(action.Run)
+
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = repoPath
+
+	err := cmd.Run()
+	return errors.Wrapf(err, "failed to run command %s at %s", action.Run, repoPath)
 }
