@@ -159,6 +159,7 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 	}
 
 	_, err = w.Commit(commitMessage, &git.CommitOptions{
+		All: true,
 		Author: &object.Signature{
 			Name:  name,
 			Email: email,
