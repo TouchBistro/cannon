@@ -38,6 +38,11 @@ func Pull(w *git.Worktree, name string) error {
 	return errors.Wrapf(err, "failed to pull changes from remote for repo %s", name)
 }
 
+func Add(repoName, repoPath, addPath string) error {
+	err := util.Exec("git", repoPath, "add", addPath)
+	return errors.Wrapf(err, "exec failed to add %s in repo %s", addPath, repoName)
+}
+
 func PullRequest(repo, branch string) string {
 	// TODO make this use the github api to actually create the PR
 	return fmt.Sprintf("https://github.com/%s/pull/new/%s", repo, branch)

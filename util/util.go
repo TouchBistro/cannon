@@ -50,3 +50,15 @@ func ExecOutput(name string, args ...string) (string, error) {
 	err := cmd.Run()
 	return stdout.String(), errors.Wrapf(err, "exec failed for command %s: %s", name, stderr.String())
 }
+
+func Exec(name, dir string, arg ...string) error {
+	cmd := exec.Command(name, arg...)
+	cmd.Dir = dir
+
+	err := cmd.Run()
+	if err != nil {
+		return errors.Wrapf(err, "Exec failed to run %s %s", name, arg)
+	}
+
+	return nil
+}

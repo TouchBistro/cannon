@@ -139,7 +139,8 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 	}
 
 	// Execute actions
-	path := fmt.Sprintf("%s/%s", config.CannonDir(), strings.Split(repo, "/")[1])
+	repoName := strings.Split(repo, "/")[1]
+	path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
 	for _, a := range actions {
 		err = executeAction(a, path)
 		if err != nil {
@@ -148,7 +149,7 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 	}
 
 	// Commit changes and push
-	err = w.AddGlob(".")
+	err = g.Add(repoName, path, ".")
 	if err != nil {
 		return errors.Wrapf(err, "failed to stage change files in repo %s", repo)
 	}
@@ -159,7 +160,6 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 	}
 
 	_, err = w.Commit(commitMessage, &git.CommitOptions{
-		All: true,
 		Author: &object.Signature{
 			Name:  name,
 			Email: email,
