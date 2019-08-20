@@ -17,7 +17,6 @@ func Clone(orgName, repoName, destDir string) (*git.Repository, *git.Worktree, e
 	r, err := git.PlainClone(destPath, false, &git.CloneOptions{
 		URL:      repoURL,
 		Progress: os.Stdout,
-		Depth:    1, // Try this for now for efficiency
 	})
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to clone %s/%s to %s", orgName, repoName, destDir)
