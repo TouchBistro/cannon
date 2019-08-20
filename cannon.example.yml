@@ -10,6 +10,10 @@ actions:
     source: LOGGER.debug
     target: console.log
     path: src/index.ts
+  - type: appendText
+    source: _local
+    target: NODE_ENV=development
+    path: .env.example
   - type: createFile
     source: files/text.txt
     path: text.txt

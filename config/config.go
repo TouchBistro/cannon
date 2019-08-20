@@ -24,6 +24,7 @@ type CannonConfig struct {
 const (
 	ActionReplaceLine         = "replaceLine"
 	ActionReplaceText         = "replaceText"
+	ActionAppendText          = "appendText"
 	ActionCreateFile          = "createFile"
 	ActionDeleteFile          = "deleteFile"
 	ActionReplaceFile         = "replaceFile"

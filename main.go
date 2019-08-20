@@ -106,6 +106,8 @@ func executeAction(a config.Action, repoPath string) error {
 		return action.ReplaceLine(a, repoPath)
 	case config.ActionReplaceText:
 		return action.ReplaceText(a, repoPath)
+	case config.ActionAppendText:
+		return action.AppendText(a, repoPath)
 	case config.ActionCreateFile:
 		return action.CreateFile(a, repoPath)
 	case config.ActionDeleteFile:

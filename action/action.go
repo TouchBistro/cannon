@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/TouchBistro/cannon/config"
@@ -55,6 +56,32 @@ func ReplaceText(action config.Action, repoPath string) error {
 	}
 
 	fmt.Printf("Replaced text '%s' with '%s' in %s\n", action.Target, action.Source, filePath)
+	return nil
+}
+
+func AppendText(action config.Action, repoPath string) error {
+	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
+
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return errors.Wrapf(err, "failed to read file %s", filePath)
+	}
+
+	regex, err := regexp.Compile(action.Target)
+	if err != nil {
+		return errors.Wrap(err, "unable to compile regex from action target")
+	}
+
+	contents := regex.ReplaceAllStringFunc(string(data), func(target string) string {
+		return target + action.Source
+	})
+
+	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
+	if err != nil {
+		return errors.Wrapf(err, "failed to write file %s", filePath)
+	}
+
+	fmt.Printf("Append text '%s' to all occurrences of '%s' in %s\n", action.Source, action.Target, filePath)
 	return nil
 }
 
