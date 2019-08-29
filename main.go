@@ -30,6 +30,7 @@ const (
 var (
 	configPath    string
 	commitMessage string
+	noPush        bool
 )
 
 // Make sure repo is on master with latest changes
@@ -172,6 +173,10 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 		return errors.Wrapf(err, "failed to commit changes in repo %s", repo)
 	}
 
+	if noPush {
+		return nil
+	}
+
 	err = r.Push(&git.PushOptions{
 		RemoteName: "origin",
 	})
@@ -181,6 +186,7 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 func parseFlags() {
 	flag.StringVarP(&configPath, "path", "p", "cannon.yml", "The path to a cannon.yml config file")
 	flag.StringVarP(&commitMessage, "commit-message", "m", "", "The commit message to use")
+	flag.BoolVar(&noPush, "no-push", false, "Prevents pushing to remote repo")
 
 	flag.Parse()
 
