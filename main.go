@@ -109,13 +109,13 @@ func executeAction(a config.Action, repoPath, repoName string) error {
 	case config.ActionAppendText:
 		return action.AppendText(a, repoPath, repoName)
 	case config.ActionCreateFile:
-		return action.CreateFile(a, repoPath)
+		return action.CreateFile(a, repoPath, repoName)
 	case config.ActionDeleteFile:
 		return action.DeleteFile(a, repoPath)
 	case config.ActionReplaceFile:
-		return action.ReplaceFile(a, repoPath)
+		return action.ReplaceFile(a, repoPath, repoName)
 	case config.ActionCreateOrReplaceFile:
-		return action.CreateOrReplaceFile(a, repoPath)
+		return action.CreateOrReplaceFile(a, repoPath, repoName)
 	case config.ActionRunCommand:
 		return action.RunCommand(a, repoPath)
 	default:
