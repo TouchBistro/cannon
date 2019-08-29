@@ -13,7 +13,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-func ReplaceLine(action config.Action, repoPath string) error {
+func expandRepoVar(source, repoName string) string {
+	return strings.ReplaceAll(source, "$REPONAME", repoName)
+}
+
+func ReplaceLine(action config.Action, repoPath, repoName string) error {
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 
 	// Do lazy way for now, can optimize later if needed
@@ -22,10 +26,11 @@ func ReplaceLine(action config.Action, repoPath string) error {
 		return errors.Wrapf(err, "failed to read file %s", filePath)
 	}
 
+	sourceStr := expandRepoVar(action.Source, repoName)
 	lines := strings.Split(string(data), "\n")
 	for i, line := range lines {
 		if line == action.Target {
-			lines[i] = action.Source
+			lines[i] = sourceStr
 		}
 	}
 
@@ -35,11 +40,11 @@ func ReplaceLine(action config.Action, repoPath string) error {
 		return errors.Wrapf(err, "failed to write file %s", filePath)
 	}
 
-	fmt.Printf("Replaced line '%s' with '%s' in %s\n", action.Target, action.Source, filePath)
+	fmt.Printf("Replaced line '%s' with '%s' in %s\n", action.Target, sourceStr, filePath)
 	return nil
 }
 
-func ReplaceText(action config.Action, repoPath string) error {
+func ReplaceText(action config.Action, repoPath, repoName string) error {
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 
 	// Do lazy way for now, can optimize later if needed
@@ -48,18 +53,19 @@ func ReplaceText(action config.Action, repoPath string) error {
 		return errors.Wrapf(err, "failed to read file %s", filePath)
 	}
 
-	contents := strings.ReplaceAll(string(data), action.Target, action.Source)
+	sourceStr := expandRepoVar(action.Source, repoName)
+	contents := strings.ReplaceAll(string(data), action.Target, sourceStr)
 
 	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
 	if err != nil {
 		return errors.Wrapf(err, "failed to write file %s", filePath)
 	}
 
-	fmt.Printf("Replaced text '%s' with '%s' in %s\n", action.Target, action.Source, filePath)
+	fmt.Printf("Replaced text '%s' with '%s' in %s\n", action.Target, sourceStr, filePath)
 	return nil
 }
 
-func AppendText(action config.Action, repoPath string) error {
+func AppendText(action config.Action, repoPath, repoName string) error {
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 
 	data, err := ioutil.ReadFile(filePath)
@@ -72,8 +78,9 @@ func AppendText(action config.Action, repoPath string) error {
 		return errors.Wrap(err, "unable to compile regex from action target")
 	}
 
+	sourceStr := expandRepoVar(action.Source, repoName)
 	contents := regex.ReplaceAllStringFunc(string(data), func(target string) string {
-		return target + action.Source
+		return target + sourceStr
 	})
 
 	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
@@ -81,7 +88,7 @@ func AppendText(action config.Action, repoPath string) error {
 		return errors.Wrapf(err, "failed to write file %s", filePath)
 	}
 
-	fmt.Printf("Append text '%s' to all occurrences of '%s' in %s\n", action.Source, action.Target, filePath)
+	fmt.Printf("Append text '%s' to all occurrences of '%s' in %s\n", sourceStr, action.Target, filePath)
 	return nil
 }
 

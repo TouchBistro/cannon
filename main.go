@@ -100,14 +100,14 @@ func prepareRepo(repo string) (*git.Repository, *git.Worktree, error) {
 	return r, w, errors.Wrapf(err, "failed to delete branch %s in repo %s", branch, repo)
 }
 
-func executeAction(a config.Action, repoPath string) error {
+func executeAction(a config.Action, repoPath, repoName string) error {
 	switch a.Type {
 	case config.ActionReplaceLine:
-		return action.ReplaceLine(a, repoPath)
+		return action.ReplaceLine(a, repoPath, repoName)
 	case config.ActionReplaceText:
-		return action.ReplaceText(a, repoPath)
+		return action.ReplaceText(a, repoPath, repoName)
 	case config.ActionAppendText:
-		return action.AppendText(a, repoPath)
+		return action.AppendText(a, repoPath, repoName)
 	case config.ActionCreateFile:
 		return action.CreateFile(a, repoPath)
 	case config.ActionDeleteFile:
@@ -144,7 +144,7 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 	repoName := strings.Split(repo, "/")[1]
 	path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
 	for _, a := range actions {
-		err = executeAction(a, path)
+		err = executeAction(a, path, repoName)
 		if err != nil {
 			return errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repo)
 		}
