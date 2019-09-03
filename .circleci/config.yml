@@ -27,7 +27,7 @@ jobs:
           command: make build
       - run:
           name: Verify cannon runs
-          command: ./cannon
+          command: ./cannon --help
 
 workflows:
   lint-build:
