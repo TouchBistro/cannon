@@ -1,0 +1,35 @@
+version: 2.1
+
+jobs:
+  lint-build:
+    docker:
+      - image: circleci/golang:1.12
+    working_directory: ~/cannon
+    steps:
+      - checkout
+      - restore_cache:
+          name: Restore dependency cache
+          keys:
+            - cannon-deps-{{ checksum "go.sum" }}
+      - run:
+          name: Install dependencies
+          command: make setup
+      - save_cache:
+          name: Cache dependencies
+          key: cannon-deps-{{ checksum "go.sum" }}
+          paths:
+            - /go/pkg
+      - run:
+          name: Run linter
+          command: make lint
+      - run:
+          name: Build cannon
+          command: make build
+      - run:
+          name: Verify cannon runs
+          command: ./cannon
+
+workflows:
+  lint-build:
+    jobs:
+      - lint-build
