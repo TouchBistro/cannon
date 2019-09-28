@@ -7,6 +7,9 @@ actions:
     source: DB_USER=core
     target: DB_USER=SA
     path: .env.example
+  - type: deleteLine
+    target: NODE_ENV=development
+    path: .env.example
   - type: replaceText
     source: LOGGER.debug
     target: console.log
@@ -15,6 +18,9 @@ actions:
     source: _local
     target: NODE_ENV=development
     path: .env.example
+  - type: deleteText
+    target: "import '@touchbistro/[a-z\\-]+'\n"
+    path: src/index.ts
   - type: createFile
     source: files/text.txt
     path: text.txt

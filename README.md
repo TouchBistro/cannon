@@ -42,37 +42,50 @@ cannon supports the following actions:
     target: <The line that will be replaced>
     path: <The path to the file>
     ```
-2. replaceText - Replace some text at specified path.
+2. deleteLine - Delete an entire line including any leading whitespace at the specified path.
+    ```yml
+    type: deleteLine
+    target: <The line to delete>
+    path: <The path to the file>
+    ```
+3. replaceText - Replace some text at specified path.
     ```yml
     type: replaceText
     source: <The text to add>
     target: <The text that will be replaced>
     path: <The path to the file>
     ```
-3. createFile - Create file at specified path if it doesn't already exist.
+4. appendText - Append text to matching text.
+    ```yml
+    type: appendText
+    source: <The text to append>
+    target: <The text that will be appended to>
+    path: <The path to the file> 
+    ```
+5. createFile - Create file at specified path if it doesn't already exist.
     ```yml
     type: createFile
     source: <The file to use>
     path: <The path to create the file at>
     ```
-4. deleteFile - Delete file at specified path if it already exists.
+6. deleteFile - Delete file at specified path if it already exists.
     ```yml
     type: deleteFile
     path: <The path to the file to delete>
     ```
-5. replaceFile - Replace file at specified path if it already exists.
+7. replaceFile - Replace file at specified path if it already exists.
     ```yml
     type: replaceFile
     source: <The file to use>
     path: <The path to the file to replace>
     ```
-6. createOrReplaceFile - Create or replace file at specified path.
+8. createOrReplaceFile - Create or replace file at specified path.
     ```yml
     type: createOrReplaceFile
     source: <The file to use>
     path: <The path to create or replace the file at>
     ```
-7. runCommand - Runs a given shell command in the repo.
+9. runCommand - Runs a given shell command in the repo.
     ```yml
     type: runCommand
     run: <The shell command to run>
