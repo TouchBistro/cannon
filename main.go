@@ -107,10 +107,14 @@ func executeAction(a config.Action, repoPath, repoName string) (string, error) {
 	switch a.Type {
 	case config.ActionReplaceLine:
 		return action.ReplaceLine(a, repoPath, repoName)
+	case config.ActionDeleteLine:
+		return action.DeleteLine(a, repoPath, repoName)
 	case config.ActionReplaceText:
 		return action.ReplaceText(a, repoPath, repoName)
 	case config.ActionAppendText:
 		return action.AppendText(a, repoPath, repoName)
+	case config.ActionDeleteText:
+		return action.DeleteText(a, repoPath, repoName)
 	case config.ActionCreateFile:
 		return action.CreateFile(a, repoPath, repoName)
 	case config.ActionDeleteFile:

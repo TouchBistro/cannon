@@ -28,8 +28,10 @@ type CannonConfig struct {
 
 const (
 	ActionReplaceLine         = "replaceLine"
+	ActionDeleteLine          = "deleteLine"
 	ActionReplaceText         = "replaceText"
 	ActionAppendText          = "appendText"
+	ActionDeleteText          = "deleteText"
 	ActionCreateFile          = "createFile"
 	ActionDeleteFile          = "deleteFile"
 	ActionReplaceFile         = "replaceFile"
