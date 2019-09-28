@@ -40,10 +40,15 @@ func ReplaceLine(action config.Action, repoPath, repoName string) (string, error
 
 	sourceStr := expandRepoVar(action.Source, repoName)
 	targetStr := expandRepoVar(action.Target, repoName)
+	regex, err := regexp.Compile(targetStr)
+	if err != nil {
+		return "", errors.Wrap(err, "unable to compile regex from action target")
+	}
+
 	lines := strings.Split(string(data), "\n")
 
 	for i, line := range lines {
-		if line == targetStr {
+		if regex.MatchString(line) {
 			lines[i] = sourceStr
 		}
 	}
@@ -61,18 +66,23 @@ func DeleteLine(action config.Action, repoPath, repoName string) (string, error)
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 
 	// Do lazy way for now, can optimize later if needed
-	data, err := ioutil.ReadFile(filePath)
+	fileBytes, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to read file %s", filePath)
 	}
 
-	lines := strings.Split(string(data), "\n")
-	filteredLines := make([]string, 0)
 	targetStr := expandRepoVar(action.Target, repoName)
+	regex, err := regexp.Compile(targetStr)
+	if err != nil {
+		return "", errors.Wrap(err, "unable to compile regex from action target")
+	}
+
+	lines := strings.Split(string(fileBytes), "\n")
+	filteredLines := make([]string, 0)
 
 	// Filter all lines that match the line to delete
 	for _, line := range lines {
-		if line != targetStr {
+		if !regex.MatchString(line) {
 			filteredLines = append(filteredLines, line)
 		}
 	}
@@ -95,9 +105,14 @@ func ReplaceText(action config.Action, repoPath, repoName string) (string, error
 		return "", errors.Wrapf(err, "failed to read file %s", filePath)
 	}
 
-	sourceStr := expandRepoVar(action.Source, repoName)
 	targetStr := expandRepoVar(action.Target, repoName)
-	contents := strings.ReplaceAll(string(data), targetStr, sourceStr)
+	regex, err := regexp.Compile("(?m)" + targetStr)
+	if err != nil {
+		return "", errors.Wrap(err, "unable to compile regex from action target")
+	}
+
+	sourceStr := expandRepoVar(action.Source, repoName)
+	contents := regex.ReplaceAllString(string(data), sourceStr)
 
 	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
 	if err != nil {
@@ -116,7 +131,7 @@ func AppendText(action config.Action, repoPath, repoName string) (string, error)
 	}
 
 	targetStr := expandRepoVar(action.Target, repoName)
-	regex, err := regexp.Compile(targetStr)
+	regex, err := regexp.Compile("(?m)" + targetStr)
 	if err != nil {
 		return "", errors.Wrap(err, "unable to compile regex from action target")
 	}
@@ -143,7 +158,7 @@ func DeleteText(action config.Action, repoPath, repoName string) (string, error)
 	}
 
 	targetStr := expandRepoVar(action.Target, repoName)
-	regex, err := regexp.Compile(targetStr)
+	regex, err := regexp.Compile("(?m)" + targetStr)
 	if err != nil {
 		return "", errors.Wrap(err, "unable to compile regex from action target")
 	}
