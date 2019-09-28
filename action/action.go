@@ -39,9 +39,11 @@ func ReplaceLine(action config.Action, repoPath, repoName string) (string, error
 	}
 
 	sourceStr := expandRepoVar(action.Source, repoName)
+	targetStr := expandRepoVar(action.Target, repoName)
 	lines := strings.Split(string(data), "\n")
+
 	for i, line := range lines {
-		if line == action.Target {
+		if line == targetStr {
 			lines[i] = sourceStr
 		}
 	}
@@ -52,7 +54,7 @@ func ReplaceLine(action config.Action, repoPath, repoName string) (string, error
 		return "", errors.Wrapf(err, "failed to write file %s", filePath)
 	}
 
-	return fmt.Sprintf("Replaced line `%s` with `%s` in `%s`", action.Target, sourceStr, action.Path), nil
+	return fmt.Sprintf("Replaced line `%s` with `%s` in `%s`", targetStr, sourceStr, action.Path), nil
 }
 
 func DeleteLine(action config.Action, repoPath, repoName string) (string, error) {
@@ -94,14 +96,15 @@ func ReplaceText(action config.Action, repoPath, repoName string) (string, error
 	}
 
 	sourceStr := expandRepoVar(action.Source, repoName)
-	contents := strings.ReplaceAll(string(data), action.Target, sourceStr)
+	targetStr := expandRepoVar(action.Target, repoName)
+	contents := strings.ReplaceAll(string(data), targetStr, sourceStr)
 
 	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to write file %s", filePath)
 	}
 
-	return fmt.Sprintf("Replaced text `%s` with `%s` in `%s`", action.Target, sourceStr, action.Path), nil
+	return fmt.Sprintf("Replaced text `%s` with `%s` in `%s`", targetStr, sourceStr, action.Path), nil
 }
 
 func AppendText(action config.Action, repoPath, repoName string) (string, error) {
@@ -112,7 +115,8 @@ func AppendText(action config.Action, repoPath, repoName string) (string, error)
 		return "", errors.Wrapf(err, "failed to read file %s", filePath)
 	}
 
-	regex, err := regexp.Compile(action.Target)
+	targetStr := expandRepoVar(action.Target, repoName)
+	regex, err := regexp.Compile(targetStr)
 	if err != nil {
 		return "", errors.Wrap(err, "unable to compile regex from action target")
 	}
@@ -127,7 +131,7 @@ func AppendText(action config.Action, repoPath, repoName string) (string, error)
 		return "", errors.Wrapf(err, "failed to write file %s", filePath)
 	}
 
-	return fmt.Sprintf("Appended text `%s` to all occurrences of `%s` in `%s`", sourceStr, action.Target, action.Path), nil
+	return fmt.Sprintf("Appended text `%s` to all occurrences of `%s` in `%s`", sourceStr, targetStr, action.Path), nil
 }
 
 func DeleteText(action config.Action, repoPath, repoName string) (string, error) {
