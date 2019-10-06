@@ -31,6 +31,7 @@ var (
 	configPath    string
 	commitMessage string
 	noPush        bool
+	noPR          bool
 )
 
 // Make sure repo is on master with latest changes
@@ -124,10 +125,10 @@ func executeAction(a config.Action, repoPath, repoName string) error {
 	}
 }
 
-func performActions(r *git.Repository, w *git.Worktree, actions []config.Action, branchName, repo string) error {
+func performActions(r *git.Repository, w *git.Worktree, actions []config.Action, branchName, repo string) (string, error) {
 	headRef, err := r.Head()
 	if err != nil {
-		return errors.Wrapf(err, "failed to get HEAD for repo %s", repo)
+		return "", errors.Wrapf(err, "failed to get HEAD for repo %s", repo)
 	}
 
 	// Create and checkout new branch
@@ -138,7 +139,7 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 		Create: true,
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed to create new branch %s in repo %s", branchName, repo)
+		return "", errors.Wrapf(err, "failed to create new branch %s in repo %s", branchName, repo)
 	}
 
 	// Execute actions
@@ -147,19 +148,19 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 	for _, a := range actions {
 		err = executeAction(a, path, repoName)
 		if err != nil {
-			return errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repo)
+			return "", errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repo)
 		}
 	}
 
 	// Commit changes and push
 	err = g.Add(repoName, path, ".")
 	if err != nil {
-		return errors.Wrapf(err, "failed to stage change files in repo %s", repo)
+		return "", errors.Wrapf(err, "failed to stage change files in repo %s", repo)
 	}
 
 	name, email, err := g.User()
 	if err != nil {
-		return errors.Wrap(err, "failed to get git user info")
+		return "", errors.Wrap(err, "failed to get git user info")
 	}
 
 	_, err = w.Commit(commitMessage, &git.CommitOptions{
@@ -170,23 +171,32 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 		},
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed to commit changes in repo %s", repo)
+		return "", errors.Wrapf(err, "failed to commit changes in repo %s", repo)
 	}
 
 	if noPush {
-		return nil
+		return "", nil
 	}
 
 	err = r.Push(&git.PushOptions{
 		RemoteName: "origin",
 	})
-	return errors.Wrapf(err, "failed to push changes to remote for repo %s", repo)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to push changes to remote for repo %s", repo)
+	}
+
+	if noPR {
+		return g.CreatePRURL(repo, branchName), nil
+	}
+
+	return g.CreatePR(repo, branchName)
 }
 
 func parseFlags() {
 	flag.StringVarP(&configPath, "path", "p", "cannon.yml", "The path to a cannon.yml config file")
 	flag.StringVarP(&commitMessage, "commit-message", "m", "", "The commit message to use")
 	flag.BoolVar(&noPush, "no-push", false, "Prevents pushing to remote repo")
+	flag.BoolVar(&noPR, "no-pr", false, "Prevents creating a Pull Request in the remote repo")
 
 	flag.Parse()
 
@@ -226,9 +236,10 @@ func main() {
 	fmt.Println()
 
 	branchName := "cannon/change-" + uuid.NewV4().String()[0:8]
+	prURLs := make([]string, len(conf.Repos))
 
 	// Make sure repos are up to date
-	for _, repo := range conf.Repos {
+	for i, repo := range conf.Repos {
 		r, w, err := prepareRepo(repo)
 
 		fmt.Printf("%sRunning actions for repo %s%s\n", cyanColor, repo, resetColor)
@@ -236,16 +247,17 @@ func main() {
 			fatal.ExitErrf(err, "Failed to prepare repo %s.", repo)
 		}
 
-		err = performActions(r, w, conf.Actions, branchName, repo)
+		url, err := performActions(r, w, conf.Actions, branchName, repo)
 		if err != nil {
 			fatal.ExitErrf(err, "Failed to perform actions on repo %s.", repo)
 		}
+		prURLs[i] = url
 
 		fmt.Printf("%sSuccessfully performed actions for repo %s%s\n\n", greenColor, repo, resetColor)
 	}
 
 	fmt.Println("Pull Request URLs:")
-	for _, repo := range conf.Repos {
-		fmt.Printf("- %s: %s\n", repo, g.PullRequest(repo, branchName))
+	for i, repo := range conf.Repos {
+		fmt.Printf("- %s: %s\n", repo, prURLs[i])
 	}
 }
