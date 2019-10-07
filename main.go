@@ -35,22 +35,22 @@ var (
 )
 
 // Make sure repo is on master with latest changes
-func prepareRepo(repo string) (*git.Repository, *git.Worktree, error) {
-	parts := strings.Split(repo, "/")
+func prepareRepo(repo config.Repo) (*git.Repository, *git.Worktree, error) {
+	parts := strings.Split(repo.Name, "/")
 	orgName := parts[0]
 	repoName := parts[1]
 	path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
 
 	// Repo doesn't exist, clone and then we are good to go
 	if !util.FileOrDirExists(path) {
-		fmt.Printf("Repo %s does not exist, cloning...", repo)
+		fmt.Printf("Repo %s does not exist, cloning...", repo.Name)
 
 		r, w, err := g.Clone(orgName, repoName, config.CannonDir())
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to clone repo %s", repo)
+			return nil, nil, errors.Wrapf(err, "failed to clone repo %s", repo.Name)
 		}
 
-		fmt.Printf("Cloned repo %s to %s\n", repo, config.CannonDir())
+		fmt.Printf("Cloned repo %s to %s\n", repo.Name, config.CannonDir())
 		return r, w, nil
 	}
 
@@ -61,12 +61,12 @@ func prepareRepo(repo string) (*git.Repository, *git.Worktree, error) {
 
 	w, err := r.Worktree()
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to get worktree for repo %s", repo)
+		return nil, nil, errors.Wrapf(err, "failed to get worktree for repo %s", repo.Name)
 	}
 
 	branchRef, err := r.Head()
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to get HEAD for repo %s", repo)
+		return nil, nil, errors.Wrapf(err, "failed to get HEAD for repo %s", repo.Name)
 	}
 
 	// Discard any changes and switch to master
@@ -74,26 +74,27 @@ func prepareRepo(repo string) (*git.Repository, *git.Worktree, error) {
 		Dir: true,
 	})
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to clean repo %s", repo)
+		return nil, nil, errors.Wrapf(err, "failed to clean repo %s", repo.Name)
 	}
 
 	err = w.Checkout(&git.CheckoutOptions{
-		Force: true,
+		Branch: plumbing.ReferenceName("refs/heads/" + repo.BaseBranch()),
+		Force:  true,
 	})
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to switch to master branch in repo %s", repo)
+		return nil, nil, errors.Wrapf(err, "failed to switch to master branch in repo %s", repo.Name)
 	}
 
 	// Pull latest changes
-	err = g.Pull(w, repo)
+	err = g.Pull(w, repo.Name)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to update master branch for repo %s", repo)
+		return nil, nil, errors.Wrapf(err, "failed to update master branch for repo %s", repo.Name)
 	}
 
 	// Head returns refs/heads/<BRANCH>, need to get branch
 	refParts := strings.Split(string(branchRef.Name()), "/")
 	branch := refParts[len(refParts)-1]
-	if branch == "master" {
+	if branch == repo.BaseBranch() {
 		return r, w, nil
 	}
 
@@ -125,10 +126,16 @@ func executeAction(a config.Action, repoPath, repoName string) error {
 	}
 }
 
-func performActions(r *git.Repository, w *git.Worktree, actions []config.Action, branchName, repo string) (string, error) {
+func performActions(
+	r *git.Repository,
+	w *git.Worktree,
+	actions []config.Action,
+	branchName string,
+	repo config.Repo,
+) (string, error) {
 	headRef, err := r.Head()
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to get HEAD for repo %s", repo)
+		return "", errors.Wrapf(err, "failed to get HEAD for repo %s", repo.Name)
 	}
 
 	// Create and checkout new branch
@@ -139,23 +146,23 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 		Create: true,
 	})
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to create new branch %s in repo %s", branchName, repo)
+		return "", errors.Wrapf(err, "failed to create new branch %s in repo %s", branchName, repo.Name)
 	}
 
 	// Execute actions
-	repoName := strings.Split(repo, "/")[1]
+	repoName := strings.Split(repo.Name, "/")[1]
 	path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
 	for _, a := range actions {
 		err = executeAction(a, path, repoName)
 		if err != nil {
-			return "", errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repo)
+			return "", errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repo.Name)
 		}
 	}
 
 	// Commit changes and push
 	err = g.Add(repoName, path, ".")
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to stage change files in repo %s", repo)
+		return "", errors.Wrapf(err, "failed to stage change files in repo %s", repo.Name)
 	}
 
 	name, email, err := g.User()
@@ -171,7 +178,7 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 		},
 	})
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to commit changes in repo %s", repo)
+		return "", errors.Wrapf(err, "failed to commit changes in repo %s", repo.Name)
 	}
 
 	if noPush {
@@ -182,14 +189,14 @@ func performActions(r *git.Repository, w *git.Worktree, actions []config.Action,
 		RemoteName: "origin",
 	})
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to push changes to remote for repo %s", repo)
+		return "", errors.Wrapf(err, "failed to push changes to remote for repo %s", repo.Name)
 	}
 
 	if noPR {
-		return g.CreatePRURL(repo, branchName), nil
+		return g.CreatePRURL(repo.Name, branchName), nil
 	}
 
-	return g.CreatePR(repo, branchName)
+	return g.CreatePR(repo.Name, repo.BaseBranch(), branchName)
 }
 
 func parseFlags() {
@@ -254,6 +261,11 @@ func main() {
 		prURLs[i] = url
 
 		fmt.Printf("%sSuccessfully performed actions for repo %s%s\n\n", greenColor, repo, resetColor)
+	}
+
+	// No point in printing anything PR related if we didn't push
+	if noPush {
+		return
 	}
 
 	fmt.Println("Pull Request URLs:")

@@ -20,11 +20,10 @@ func CreatePRURL(repo, branch string) string {
 	return fmt.Sprintf("https://github.com/%s/pull/new/%s", repo, branch)
 }
 
-func CreatePR(repo, branch string) (string, error) {
+func CreatePR(repo, base, branch string) (string, error) {
 	url := fmt.Sprintf("%s/repos/%s/pulls", apiURL, repo)
 	client := &http.Client{}
 
-	base := "master"
 	reqBody := map[string]string{
 		"title": branch,
 		"head":  branch,
@@ -43,6 +42,8 @@ func CreatePR(repo, branch string) (string, error) {
 
 	token := fmt.Sprintf("token %s", os.Getenv(tokenVar))
 	req.Header.Add("Authorization", token)
+	// Use v3 API
+	req.Header.Add("Accept", "application/vnd.github.v3+json")
 
 	res, err := client.Do(req)
 	if err != nil {
