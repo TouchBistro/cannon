@@ -16,8 +16,13 @@ type Action struct {
 	Run    string `yaml:"run"`
 }
 
+type Repo struct {
+	Name string `yaml:"name"`
+	Base string `yaml:"base"`
+}
+
 type CannonConfig struct {
-	Repos   []string `yaml:"repos"`
+	Repos   []Repo   `yaml:"repos"`
 	Actions []Action `yaml:"actions"`
 }
 
@@ -62,4 +67,12 @@ func Config() *CannonConfig {
 
 func CannonDir() string {
 	return cannonDir
+}
+
+func (repo Repo) BaseBranch() string {
+	if repo.Base == "" {
+		return "master"
+	}
+
+	return repo.Base
 }

@@ -13,6 +13,15 @@ cannon is a small CLI tool that lets you make changes to multiple git repos.
     ```sh
     go install cannon
     ```
+4. Create a GitHub Access Token
+    - Create the token with the `repo` box checked in the list of permissions. Follow the instructions [here](https://help.github.com/en/articles/creating-a-personal-access-token-for-the-command-line) to learn more.
+        - Make sure you copy the token when you create it!
+    - After the token has been created, enable SSO for it.
+    - Add the following to your `.bash_profile` or `.zshrc`:
+    ```sh
+    export HOMEBREW_GITHUB_API_TOKEN=<YOUR_TOKEN>
+    ```
+    - Run `source ~/.zshrc` or `source ~/.bash_profile`.
 
 ## Usage
 To use cannon provide a `cannon.yml` file which contains a list of repos and a list of actions to apply.
@@ -20,6 +29,8 @@ To use cannon provide a `cannon.yml` file which contains a list of repos and a l
 ```sh
 Usage of ./cannon:
   -m, --commit-message string   The commit message to use
+      --no-pr                   Prevents creating a Pull Request in the remote repo
+      --no-push                 Prevents pushing to remote repo
   -p, --path string             The path to a cannon.yml config file (default "cannon.yml")
 ```
 
@@ -67,12 +78,14 @@ cannon supports the following actions:
     run: <The shell command to run>
     ```
 
+## Configuration
+
 `cannon.yml` example:
 The `cannon.yml` file is structured as follows:
 ```yml
 repos:
-  - TouchBistro/touchbistro-node-boilerplate
-  - TouchBistro/ordering-deliveroo-service
+  - name: TouchBistro/touchbistro-node-boilerplate
+  - name: TouchBistro/ordering-deliveroo-service
 actions:
   - type: replaceLine
     source: DB_USER=core
@@ -96,3 +109,17 @@ actions:
   - type: runCommand
     run: yarn
 ```
+
+### Change base branch for PRs
+
+By default `cannon` will target `master` as the base branch when creating PRs.
+If you need to use a different base branch you can set it using the `base` field of the repo.
+
+Example:
+```yml
+repos:
+  - name: TouchBistro/repo-name
+    base: develop
+```
+
+This would create PRs with `develop` as the base branch.

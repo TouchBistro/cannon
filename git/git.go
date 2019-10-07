@@ -42,11 +42,6 @@ func Add(repoName, repoPath, addPath string) error {
 	return errors.Wrapf(err, "exec failed to add %s in repo %s", addPath, repoName)
 }
 
-func PullRequest(repo, branch string) string {
-	// TODO make this use the github api to actually create the PR
-	return fmt.Sprintf("https://github.com/%s/pull/new/%s", repo, branch)
-}
-
 func User() (string, string, error) {
 	args := []string{"config", "--get", "--global"}
 	nameOutput, err := util.ExecOutput("git", append(args, "user.name")...)
