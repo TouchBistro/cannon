@@ -55,6 +55,35 @@ func ReplaceLine(action config.Action, repoPath, repoName string) (string, error
 	return fmt.Sprintf("Replaced line `%s` with `%s` in `%s`", action.Target, sourceStr, action.Path), nil
 }
 
+func DeleteLine(action config.Action, repoPath, repoName string) (string, error) {
+	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
+
+	// Do lazy way for now, can optimize later if needed
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to read file %s", filePath)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	filteredLines := make([]string, 0)
+	targetStr := expandRepoVar(action.Target, repoName)
+
+	// Filter all lines that match the line to delete
+	for _, line := range lines {
+		if line != targetStr {
+			filteredLines = append(filteredLines, line)
+		}
+	}
+
+	output := strings.Join(filteredLines, "\n")
+	err = ioutil.WriteFile(filePath, []byte(output), 0644)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to write file %s", filePath)
+	}
+
+	return fmt.Sprintf("Deleted line `%s` in `%s`\n", targetStr, action.Path), nil
+}
+
 func ReplaceText(action config.Action, repoPath, repoName string) (string, error) {
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 
@@ -99,6 +128,32 @@ func AppendText(action config.Action, repoPath, repoName string) (string, error)
 	}
 
 	return fmt.Sprintf("Appended text `%s` to all occurrences of `%s` in `%s`", sourceStr, action.Target, action.Path), nil
+}
+
+func DeleteText(action config.Action, repoPath, repoName string) (string, error) {
+	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
+
+	fileBytes, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to read file %s", filePath)
+	}
+
+	targetStr := expandRepoVar(action.Target, repoName)
+	regex, err := regexp.Compile(targetStr)
+	if err != nil {
+		return "", errors.Wrap(err, "unable to compile regex from action target")
+	}
+
+	// Get a slice of all substrings that don't match regex
+	components := regex.Split(string(fileBytes), -1)
+	contents := strings.Join(components, "")
+
+	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to write file %s", filePath)
+	}
+
+	return fmt.Sprintf("Deleted all occurrences of `%s` in `%s`\n", targetStr, action.Path), nil
 }
 
 func CreateFile(action config.Action, repoPath, repoName string) (string, error) {
