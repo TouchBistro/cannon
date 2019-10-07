@@ -20,6 +20,16 @@ func CreatePRURL(repo, branch string) string {
 	return fmt.Sprintf("https://github.com/%s/pull/new/%s", repo, branch)
 }
 
+func CreatePRDescription(results []string) string {
+	desc := "Changes applied by commit-cannon:\n"
+
+	for _, result := range results {
+		desc += fmt.Sprintf("  * %s\n", result)
+	}
+
+	return desc
+}
+
 func CreatePR(repo, base, branch, desc string) (string, error) {
 	url := fmt.Sprintf("%s/repos/%s/pulls", apiURL, repo)
 	client := &http.Client{}

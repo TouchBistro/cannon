@@ -200,7 +200,7 @@ func performActions(
 		return g.CreatePRURL(repo.Name, branchName), nil
 	}
 
-	return g.CreatePR(repo.Name, repo.BaseBranch(), branchName, util.CreatePRDescription(results))
+	return g.CreatePR(repo.Name, repo.BaseBranch(), branchName, g.CreatePRDescription(results))
 }
 
 func parseFlags() {
