@@ -133,7 +133,7 @@ func AppendText(action config.Action, repoPath, repoName string) (string, error)
 func DeleteText(action config.Action, repoPath, repoName string) (string, error) {
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 
-	data, err := ioutil.ReadFile(filePath)
+	fileBytes, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to read file %s", filePath)
 	}
@@ -145,7 +145,7 @@ func DeleteText(action config.Action, repoPath, repoName string) (string, error)
 	}
 
 	// Get a slice of all substrings that don't match regex
-	components := regex.Split(string(data), -1)
+	components := regex.Split(string(fileBytes), -1)
 	contents := strings.Join(components, "")
 
 	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
