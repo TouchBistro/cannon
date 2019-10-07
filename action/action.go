@@ -29,13 +29,13 @@ func copyFile(fromPath, toPath, repoName string) error {
 	return errors.Wrapf(err, "failed to write file %s", toPath)
 }
 
-func ReplaceLine(action config.Action, repoPath, repoName string) error {
+func ReplaceLine(action config.Action, repoPath, repoName string) (string, error) {
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 
 	// Do lazy way for now, can optimize later if needed
 	data, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "failed to read file %s", filePath)
+		return "", errors.Wrapf(err, "failed to read file %s", filePath)
 	}
 
 	sourceStr := expandRepoVar(action.Source, repoName)
@@ -49,20 +49,19 @@ func ReplaceLine(action config.Action, repoPath, repoName string) error {
 	output := strings.Join(lines, "\n")
 	err = ioutil.WriteFile(filePath, []byte(output), 0644)
 	if err != nil {
-		return errors.Wrapf(err, "failed to write file %s", filePath)
+		return "", errors.Wrapf(err, "failed to write file %s", filePath)
 	}
 
-	fmt.Printf("Replaced line '%s' with '%s' in %s\n", action.Target, sourceStr, filePath)
-	return nil
+	return fmt.Sprintf("Replaced line `%s` with `%s` in `%s`", action.Target, sourceStr, action.Path), nil
 }
 
-func ReplaceText(action config.Action, repoPath, repoName string) error {
+func ReplaceText(action config.Action, repoPath, repoName string) (string, error) {
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 
 	// Do lazy way for now, can optimize later if needed
 	data, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "failed to read file %s", filePath)
+		return "", errors.Wrapf(err, "failed to read file %s", filePath)
 	}
 
 	sourceStr := expandRepoVar(action.Source, repoName)
@@ -70,24 +69,23 @@ func ReplaceText(action config.Action, repoPath, repoName string) error {
 
 	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
 	if err != nil {
-		return errors.Wrapf(err, "failed to write file %s", filePath)
+		return "", errors.Wrapf(err, "failed to write file %s", filePath)
 	}
 
-	fmt.Printf("Replaced text '%s' with '%s' in %s\n", action.Target, sourceStr, filePath)
-	return nil
+	return fmt.Sprintf("Replaced text `%s` with `%s` in `%s`", action.Target, sourceStr, action.Path), nil
 }
 
-func AppendText(action config.Action, repoPath, repoName string) error {
+func AppendText(action config.Action, repoPath, repoName string) (string, error) {
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 
 	data, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "failed to read file %s", filePath)
+		return "", errors.Wrapf(err, "failed to read file %s", filePath)
 	}
 
 	regex, err := regexp.Compile(action.Target)
 	if err != nil {
-		return errors.Wrap(err, "unable to compile regex from action target")
+		return "", errors.Wrap(err, "unable to compile regex from action target")
 	}
 
 	sourceStr := expandRepoVar(action.Source, repoName)
@@ -97,74 +95,70 @@ func AppendText(action config.Action, repoPath, repoName string) error {
 
 	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
 	if err != nil {
-		return errors.Wrapf(err, "failed to write file %s", filePath)
+		return "", errors.Wrapf(err, "failed to write file %s", filePath)
 	}
 
-	fmt.Printf("Append text '%s' to all occurrences of '%s' in %s\n", sourceStr, action.Target, filePath)
-	return nil
+	return fmt.Sprintf("Appended text `%s` to all occurrences of `%s` in `%s`", sourceStr, action.Target, action.Path), nil
 }
 
-func CreateFile(action config.Action, repoPath, repoName string) error {
+func CreateFile(action config.Action, repoPath, repoName string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return errors.Wrap(err, "unable to get current working directory")
+		return "", errors.Wrap(err, "unable to get current working directory")
 	}
 	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
 
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 	if util.FileOrDirExists(filePath) {
-		return errors.New(fmt.Sprintf("File at path %s already exists", filePath))
+		return "", errors.New(fmt.Sprintf("File at path %s already exists", filePath))
 	}
 
 	err = copyFile(sourceFilePath, filePath, repoName)
 	if err != nil {
-		return errors.Wrapf(err, "failed to create file at %s", filePath)
+		return "", errors.Wrapf(err, "failed to create file at %s", filePath)
 	}
 
-	fmt.Printf("Created file %s from %s\n", filePath, sourceFilePath)
-	return nil
+	return fmt.Sprintf("Created file `%s`", action.Path), nil
 }
 
-func DeleteFile(action config.Action, repoPath string) error {
+func DeleteFile(action config.Action, repoPath string) (string, error) {
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 	if !util.FileOrDirExists(filePath) {
-		return errors.New(fmt.Sprintf("File at path %s does not exist", filePath))
+		return "", errors.New(fmt.Sprintf("File at path %s does not exist", filePath))
 	}
 
 	err := os.Remove(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "failed to delete file %s", filePath)
+		return "", errors.Wrapf(err, "failed to delete file %s", filePath)
 	}
 
-	fmt.Printf("Deleted file %s\n", filePath)
-	return nil
+	return fmt.Sprintf("Deleted file `%s`", action.Path), nil
 }
 
-func ReplaceFile(action config.Action, repoPath, repoName string) error {
+func ReplaceFile(action config.Action, repoPath, repoName string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return errors.Wrap(err, "unable to get current working directory")
+		return "", errors.Wrap(err, "unable to get current working directory")
 	}
 	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
 
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 	if !util.FileOrDirExists(filePath) {
-		return errors.New(fmt.Sprintf("File at path %s does not exist", filePath))
+		return "", errors.New(fmt.Sprintf("File at path %s does not exist", filePath))
 	}
 
 	err = copyFile(sourceFilePath, filePath, repoName)
 	if err != nil {
-		return errors.Wrapf(err, "failed to replace file at %s", filePath)
+		return "", errors.Wrapf(err, "failed to replace file at %s", filePath)
 	}
 
-	fmt.Printf("Replaced file %s with %s\n", filePath, sourceFilePath)
-	return nil
+	return fmt.Sprintf("Replaced file `%s`", action.Path), nil
 }
 
-func CreateOrReplaceFile(action config.Action, repoPath, repoName string) error {
+func CreateOrReplaceFile(action config.Action, repoPath, repoName string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return errors.Wrap(err, "unable to get current working directory")
+		return "", errors.Wrap(err, "unable to get current working directory")
 	}
 	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
 
@@ -172,14 +166,13 @@ func CreateOrReplaceFile(action config.Action, repoPath, repoName string) error 
 
 	err = copyFile(sourceFilePath, filePath, repoName)
 	if err != nil {
-		return errors.Wrapf(err, "failed to create or replace file at %s", filePath)
+		return "", errors.Wrapf(err, "failed to create or replace file at %s", filePath)
 	}
 
-	fmt.Printf("Created or replaced file %s with %s\n", filePath, sourceFilePath)
-	return nil
+	return fmt.Sprintf("Created or replaced file `%s`", action.Path), nil
 }
 
-func RunCommand(action config.Action, repoPath string) error {
+func RunCommand(action config.Action, repoPath string) (string, error) {
 	args := strings.Fields(action.Run)
 
 	cmd := exec.Command(args[0], args[1:]...)
@@ -188,5 +181,9 @@ func RunCommand(action config.Action, repoPath string) error {
 	cmd.Dir = repoPath
 
 	err := cmd.Run()
-	return errors.Wrapf(err, "failed to run command %s at %s", action.Run, repoPath)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to run command %s at %s", action.Run, repoPath)
+	}
+
+	return fmt.Sprintf("Ran command `%s`", action.Run), nil
 }

@@ -2,6 +2,7 @@ package util
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -49,4 +50,14 @@ func Exec(name, dir string, arg ...string) error {
 	}
 
 	return nil
+}
+
+func CreatePRDescription(results []string) string {
+	desc := "Changes applied by commit-cannon:\n"
+
+	for _, result := range results {
+		desc += fmt.Sprintf("  * %s\n", result)
+	}
+
+	return desc
 }

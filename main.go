@@ -103,7 +103,7 @@ func prepareRepo(repo config.Repo) (*git.Repository, *git.Worktree, error) {
 	return r, w, errors.Wrapf(err, "failed to delete branch %s in repo %s", branch, repo)
 }
 
-func executeAction(a config.Action, repoPath, repoName string) error {
+func executeAction(a config.Action, repoPath, repoName string) (string, error) {
 	switch a.Type {
 	case config.ActionReplaceLine:
 		return action.ReplaceLine(a, repoPath, repoName)
@@ -122,7 +122,7 @@ func executeAction(a config.Action, repoPath, repoName string) error {
 	case config.ActionRunCommand:
 		return action.RunCommand(a, repoPath)
 	default:
-		return errors.New(fmt.Sprintf("invalid action type %s", a.Type))
+		return "", errors.New(fmt.Sprintf("invalid action type %s", a.Type))
 	}
 }
 
@@ -152,11 +152,15 @@ func performActions(
 	// Execute actions
 	repoName := strings.Split(repo.Name, "/")[1]
 	path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
-	for _, a := range actions {
-		err = executeAction(a, path, repoName)
+	results := make([]string, len(actions))
+	for i, a := range actions {
+		result, err := executeAction(a, path, repoName)
 		if err != nil {
 			return "", errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repo.Name)
 		}
+
+		results[i] = result
+		fmt.Printf("  - %s\n", result)
 	}
 
 	// Commit changes and push
@@ -196,7 +200,7 @@ func performActions(
 		return g.CreatePRURL(repo.Name, branchName), nil
 	}
 
-	return g.CreatePR(repo.Name, repo.BaseBranch(), branchName)
+	return g.CreatePR(repo.Name, repo.BaseBranch(), branchName, util.CreatePRDescription(results))
 }
 
 func parseFlags() {
@@ -223,7 +227,7 @@ func main() {
 	conf := config.Config()
 	fmt.Println("Affected repos:")
 	for _, repo := range conf.Repos {
-		fmt.Printf("- %s\n", repo)
+		fmt.Printf("- %s\n", repo.Name)
 	}
 
 	// Have user confirm changes
@@ -249,7 +253,7 @@ func main() {
 	for i, repo := range conf.Repos {
 		r, w, err := prepareRepo(repo)
 
-		fmt.Printf("%sRunning actions for repo %s%s\n", cyanColor, repo, resetColor)
+		fmt.Printf("%sRunning actions for repo %s%s\n", cyanColor, repo.Name, resetColor)
 		if err != nil {
 			fatal.ExitErrf(err, "Failed to prepare repo %s.", repo)
 		}
@@ -260,7 +264,7 @@ func main() {
 		}
 		prURLs[i] = url
 
-		fmt.Printf("%sSuccessfully performed actions for repo %s%s\n\n", greenColor, repo, resetColor)
+		fmt.Printf("%sSuccessfully performed actions for repo %s%s\n\n", greenColor, repo.Name, resetColor)
 	}
 
 	// No point in printing anything PR related if we didn't push
@@ -270,6 +274,6 @@ func main() {
 
 	fmt.Println("Pull Request URLs:")
 	for i, repo := range conf.Repos {
-		fmt.Printf("- %s: %s\n", repo, prURLs[i])
+		fmt.Printf("- %s: %s\n", repo.Name, prURLs[i])
 	}
 }

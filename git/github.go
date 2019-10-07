@@ -20,7 +20,7 @@ func CreatePRURL(repo, branch string) string {
 	return fmt.Sprintf("https://github.com/%s/pull/new/%s", repo, branch)
 }
 
-func CreatePR(repo, base, branch string) (string, error) {
+func CreatePR(repo, base, branch, desc string) (string, error) {
 	url := fmt.Sprintf("%s/repos/%s/pulls", apiURL, repo)
 	client := &http.Client{}
 
@@ -28,7 +28,7 @@ func CreatePR(repo, base, branch string) (string, error) {
 		"title": branch,
 		"head":  branch,
 		"base":  base,
-		"body":  "TODO add a body fam",
+		"body":  desc,
 	}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -37,7 +37,7 @@ func CreatePR(repo, base, branch string) (string, error) {
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return "", errors.Wrapf(err, "Failed to create POST request to GitHub API %s")
+		return "", errors.Wrapf(err, "Failed to create POST request to GitHub API")
 	}
 
 	token := fmt.Sprintf("token %s", os.Getenv(tokenVar))
