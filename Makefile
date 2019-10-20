@@ -6,7 +6,7 @@ setup:
 	go mod download
 .PHONY: setup
 
-# Build tb
+# Build cannon
 build:
 	go build
 .PHONY: build
@@ -14,6 +14,7 @@ build:
 # Clean all build artifacts
 clean:
 	rm cannon
+	rm -rf coverage
 .PHONY: clean
 
 # Run the linter
@@ -25,3 +26,10 @@ lint:
 go-uninstall:
 	rm $(shell go env GOPATH)/bin/cannon
 .PHONY: go-uninstall
+
+# Run tests and collect coverage data
+test:
+	mkdir -p coverage
+	go test -coverprofile=coverage/coverage.txt ./...
+	go tool cover -html=coverage/coverage.txt -o coverage/coverage.html
+.PHONY: test

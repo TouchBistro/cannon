@@ -24,3 +24,6 @@ cannon
 cannon.yml
 # Workdir for using locally
 files/
+
+# Test coverage
+coverage/
