@@ -29,23 +29,15 @@ func copyFile(fromPath, toPath, repoName string) error {
 	return errors.Wrapf(err, "failed to write file %s", toPath)
 }
 
-func ReplaceLine(action config.Action, repoPath, repoName string) (string, error) {
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-
-	// Do lazy way for now, can optimize later if needed
-	data, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to read file %s", filePath)
-	}
-
+func ReplaceLine(action config.Action, repoName string, fileData []byte) ([]byte, string, error) {
 	sourceStr := expandRepoVar(action.Source, repoName)
 	targetStr := expandRepoVar(action.Target, repoName)
 	regex, err := regexp.Compile(targetStr)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to compile regex from action target")
+		return nil, "", errors.Wrap(err, "unable to compile regex from action target")
 	}
 
-	lines := strings.Split(string(data), "\n")
+	lines := strings.Split(string(fileData), "\n")
 
 	for i, line := range lines {
 		if regex.MatchString(line) {
@@ -54,30 +46,18 @@ func ReplaceLine(action config.Action, repoPath, repoName string) (string, error
 	}
 
 	output := strings.Join(lines, "\n")
-	err = ioutil.WriteFile(filePath, []byte(output), 0644)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to write file %s", filePath)
-	}
-
-	return fmt.Sprintf("Replaced line `%s` with `%s` in `%s`", targetStr, sourceStr, action.Path), nil
+	msg := fmt.Sprintf("Replaced line `%s` with `%s` in `%s`", targetStr, sourceStr, action.Path)
+	return []byte(output), msg, nil
 }
 
-func DeleteLine(action config.Action, repoPath, repoName string) (string, error) {
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-
-	// Do lazy way for now, can optimize later if needed
-	fileBytes, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to read file %s", filePath)
-	}
-
+func DeleteLine(action config.Action, repoName string, fileData []byte) ([]byte, string, error) {
 	targetStr := expandRepoVar(action.Target, repoName)
 	regex, err := regexp.Compile(targetStr)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to compile regex from action target")
+		return nil, "", errors.Wrap(err, "unable to compile regex from action target")
 	}
 
-	lines := strings.Split(string(fileBytes), "\n")
+	lines := strings.Split(string(fileData), "\n")
 	filteredLines := make([]string, 0)
 
 	// Filter all lines that match the line to delete
@@ -88,91 +68,53 @@ func DeleteLine(action config.Action, repoPath, repoName string) (string, error)
 	}
 
 	output := strings.Join(filteredLines, "\n")
-	err = ioutil.WriteFile(filePath, []byte(output), 0644)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to write file %s", filePath)
-	}
-
-	return fmt.Sprintf("Deleted line `%s` in `%s`\n", targetStr, action.Path), nil
+	msg := fmt.Sprintf("Deleted line `%s` in `%s`\n", targetStr, action.Path)
+	return []byte(output), msg, nil
 }
 
-func ReplaceText(action config.Action, repoPath, repoName string) (string, error) {
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-
-	// Do lazy way for now, can optimize later if needed
-	data, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to read file %s", filePath)
-	}
-
+func ReplaceText(action config.Action, repoName string, fileData []byte) ([]byte, string, error) {
 	targetStr := expandRepoVar(action.Target, repoName)
 	regex, err := regexp.Compile("(?m)" + targetStr)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to compile regex from action target")
+		return nil, "", errors.Wrap(err, "unable to compile regex from action target")
 	}
 
 	sourceStr := expandRepoVar(action.Source, repoName)
-	contents := regex.ReplaceAllString(string(data), sourceStr)
+	contents := regex.ReplaceAllString(string(fileData), sourceStr)
 
-	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to write file %s", filePath)
-	}
-
-	return fmt.Sprintf("Replaced text `%s` with `%s` in `%s`", targetStr, sourceStr, action.Path), nil
+	msg := fmt.Sprintf("Replaced text `%s` with `%s` in `%s`", targetStr, sourceStr, action.Path)
+	return []byte(contents), msg, nil
 }
 
-func AppendText(action config.Action, repoPath, repoName string) (string, error) {
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-
-	data, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to read file %s", filePath)
-	}
-
+func AppendText(action config.Action, repoName string, fileData []byte) ([]byte, string, error) {
 	targetStr := expandRepoVar(action.Target, repoName)
 	regex, err := regexp.Compile("(?m)" + targetStr)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to compile regex from action target")
+		return nil, "", errors.Wrap(err, "unable to compile regex from action target")
 	}
 
 	sourceStr := expandRepoVar(action.Source, repoName)
-	contents := regex.ReplaceAllStringFunc(string(data), func(target string) string {
+	contents := regex.ReplaceAllStringFunc(string(fileData), func(target string) string {
 		return target + sourceStr
 	})
 
-	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to write file %s", filePath)
-	}
-
-	return fmt.Sprintf("Appended text `%s` to all occurrences of `%s` in `%s`", sourceStr, targetStr, action.Path), nil
+	msg := fmt.Sprintf("Appended text `%s` to all occurrences of `%s` in `%s`", sourceStr, targetStr, action.Path)
+	return []byte(contents), msg, nil
 }
 
-func DeleteText(action config.Action, repoPath, repoName string) (string, error) {
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-
-	fileBytes, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to read file %s", filePath)
-	}
-
+func DeleteText(action config.Action, repoName string, fileData []byte) ([]byte, string, error) {
 	targetStr := expandRepoVar(action.Target, repoName)
 	regex, err := regexp.Compile("(?m)" + targetStr)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to compile regex from action target")
+		return nil, "", errors.Wrap(err, "unable to compile regex from action target")
 	}
 
 	// Get a slice of all substrings that don't match regex
-	components := regex.Split(string(fileBytes), -1)
+	components := regex.Split(string(fileData), -1)
 	contents := strings.Join(components, "")
 
-	err = ioutil.WriteFile(filePath, []byte(contents), 0644)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to write file %s", filePath)
-	}
-
-	return fmt.Sprintf("Deleted all occurrences of `%s` in `%s`\n", targetStr, action.Path), nil
+	msg := fmt.Sprintf("Deleted all occurrences of `%s` in `%s`\n", targetStr, action.Path)
+	return []byte(contents), msg, nil
 }
 
 func CreateFile(action config.Action, repoPath, repoName string) (string, error) {
