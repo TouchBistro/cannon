@@ -247,9 +247,21 @@ func CreateOrReplaceFile(action config.Action, repoPath, repoName string) (strin
 }
 
 func RunCommand(action config.Action, repoPath string) (string, error) {
-	args := strings.Fields(action.Run)
+	const shellPrefix = "SHELL >> "
+	var cmdName string
+	var args []string
 
-	cmd := exec.Command(args[0], args[1:]...)
+	if strings.HasPrefix(action.Run, shellPrefix) {
+		cmdName = "bash"
+		shellCmd := strings.TrimPrefix(action.Run, shellPrefix)
+		args = []string{"-c", shellCmd}
+	} else {
+		fields := strings.Fields(action.Run)
+		cmdName = fields[0]
+		args = fields[1:]
+	}
+
+	cmd := exec.Command(cmdName, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = repoPath

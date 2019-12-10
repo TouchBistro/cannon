@@ -90,6 +90,12 @@ cannon supports the following actions:
     type: runCommand
     run: <The shell command to run>
     ```
+    You can also run `bash` commands by prefixing the command with `SHELL >>`.  
+    Ex:
+    ```yml
+    type: runCommand
+    run: SHELL >> if [[ ! -d data ]]; then mkdir data; touch data/.gitkeep; fi
+    ```
 
 ## Configuration
 
