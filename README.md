@@ -90,7 +90,7 @@ cannon supports the following actions:
     type: runCommand
     run: <The shell command to run>
     ```
-    You can also run `bash` commands by prefixing the command with `SHELL >>`.  
+    You can also run shell (`sh`) commands by prefixing the command with `SHELL >>`.  
     Ex:
     ```yml
     type: runCommand

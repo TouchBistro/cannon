@@ -252,7 +252,7 @@ func RunCommand(action config.Action, repoPath string) (string, error) {
 	var args []string
 
 	if strings.HasPrefix(action.Run, shellPrefix) {
-		cmdName = "bash"
+		cmdName = "sh"
 		shellCmd := strings.TrimPrefix(action.Run, shellPrefix)
 		args = []string{"-c", shellCmd}
 	} else {
