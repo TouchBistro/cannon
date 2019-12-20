@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -103,18 +104,55 @@ func prepareRepo(repo config.Repo) (*git.Repository, *git.Worktree, error) {
 	return r, w, errors.Wrapf(err, "failed to delete branch %s in repo %s", branch, repo)
 }
 
-func executeAction(a config.Action, repoPath, repoName string) (string, error) {
+func executeTextAction(a config.Action, repoPath, repoName string) (string, error) {
+	filePath := fmt.Sprintf("%s/%s", repoPath, a.Path)
+
+	// Do lazy way for now, can optimize later if needed
+	fileData, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to read file %s", filePath)
+	}
+
+	var actionFn func(config.Action, string, []byte) ([]byte, string, error)
 	switch a.Type {
 	case config.ActionReplaceLine:
-		return action.ReplaceLine(a, repoPath, repoName)
+		actionFn = action.ReplaceLine
 	case config.ActionDeleteLine:
-		return action.DeleteLine(a, repoPath, repoName)
+		actionFn = action.DeleteLine
 	case config.ActionReplaceText:
-		return action.ReplaceText(a, repoPath, repoName)
+		actionFn = action.ReplaceText
 	case config.ActionAppendText:
-		return action.AppendText(a, repoPath, repoName)
+		actionFn = action.AppendText
 	case config.ActionDeleteText:
-		return action.DeleteText(a, repoPath, repoName)
+		actionFn = action.DeleteText
+	default:
+		return "", errors.New(fmt.Sprintf("invalid action type %s", a.Type))
+	}
+
+	outputData, msg, err := actionFn(a, repoName, fileData)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repoName)
+	}
+
+	err = ioutil.WriteFile(filePath, []byte(outputData), 0644)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to write file %s", filePath)
+	}
+
+	return msg, nil
+}
+
+func executeAction(a config.Action, repoPath, repoName string) (string, error) {
+	if strings.HasSuffix(a.Type, "Line") || strings.HasSuffix(a.Type, "Text") {
+		msg, err := executeTextAction(a, repoPath, repoName)
+		if err != nil {
+			return "", errors.Wrapf(err, "failed to execute text action %s", a.Type)
+		}
+
+		return msg, err
+	}
+
+	switch a.Type {
 	case config.ActionCreateFile:
 		return action.CreateFile(a, repoPath, repoName)
 	case config.ActionDeleteFile:
