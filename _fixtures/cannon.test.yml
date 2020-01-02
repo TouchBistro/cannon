@@ -1,0 +1,6 @@
+repos:
+  - name: TouchBistro/cannon
+    base: develop
+actions:
+  - type: replaceLine
+    path: .env.example
