@@ -1,84 +1,72 @@
 package action
 
-// TESTS WILL BE RE ADDED PROPERLY IN NEXT PR
+import (
+	"testing"
 
-// var expandRepoVarTests = []struct {
-// 	source   string
-// 	repoName string
-// 	expected string
-// }{
-// 	{"container_name: $REPONAME_container", "node-boilerplate", "container_name: node-boilerplate_container"},
-// 	{"ENV NODE_ENV development", "loyalty-gateway-serivce", "ENV NODE_ENV development"},
-// }
+	"github.com/TouchBistro/cannon/config"
+	"github.com/stretchr/testify/assert"
+)
 
-// func TestExpandRepoVar(t *testing.T) {
-// 	for _, testCase := range expandRepoVarTests {
-// 		result := expandRepoVar(testCase.source, testCase.repoName)
+func TestExpandRepoVar(t *testing.T) {
+	assert := assert.New(t)
+	expanded := expandRepoVar("container_name: $REPONAME_container", "node-boilerplate")
+	notExpanded := expandRepoVar("NODE_ENV=development", "node-boilerplate")
 
-// 		logPrefix := fmt.Sprintf("expandRepoVar(%s, %s):", testCase.source, testCase.repoName)
-// 		if result != testCase.expected {
-// 			t.Errorf("%s FAILED, expected %s but got %s", logPrefix, testCase.expected, result)
-// 		} else {
-// 			t.Logf("%s PASSED, expected %s and got %s", logPrefix, testCase.expected, result)
-// 		}
-// 	}
-// }
+	assert.Equal("container_name: node-boilerplate_container", expanded)
+	assert.Equal("NODE_ENV=development", notExpanded)
+}
 
-// type textActionTest struct {
-// 	action     config.Action
-// 	repoName   string
-// 	fileData   []byte
-// 	outputData []byte
-// 	msg        string
-// 	err        error
-// }
+func TestReplaceLine(t *testing.T) {
+	assert := assert.New(t)
+	action := config.Action{
+		Source: "NODE_ENV=$REPONAME",
+		Target: "NODE_ENV=development",
+	}
+	input := []byte("NODE_ENV=development\n")
+	outputData, msg, err := ReplaceLine(action, "node-boilerplate", input)
 
-// var replaceLineTests = []textActionTest{
-// 	{
-// 		config.Action{
-// 			Type:   "replaceLine",
-// 			Source: "NODE_ENV=test",
-// 			Target: "NODE_ENV=development",
-// 			Path:   ".env.example",
-// 		},
-// 		"node-boilerplate",
-// 		[]byte("# Sets env var\nNODE_ENV=development\nHTTP_PORT=8080\n"),
-// 		[]byte("# Sets env var\nNODE_ENV=test\nHTTP_PORT=8080\n"),
-// 		"Replaced line `NODE_ENV=development` with `NODE_ENV=test` in `.env.example`",
-// 		nil,
-// 	},
-// 	{
-// 		config.Action{
-// 			Type:   "replaceLine",
-// 			Source: "NODE_ENV=test",
-// 			Target: "NODE_ENV=development",
-// 			Path:   ".env.example",
-// 		},
-// 		"node-boilerplate",
-// 		[]byte("# Sets env var\nNODE_ENV=development\nHTTP_PORT=8080\n"),
-// 		[]byte("# Sets env var\nNODE_ENV=test\nHTTP_PORT=8080\n"),
-// 		"Replaced line `NODE_ENV=development` with `NODE_ENV=test` in `.env.example`",
-// 		nil,
-// 	},
-// }
+	assert.Equal(outputData, []byte("NODE_ENV=node-boilerplate\n"))
+	assert.NotEmpty(msg)
+	assert.NoError(err)
+}
 
-// func TestReplaceLine(t *testing.T) {
-// 	for _, testCase := range replaceLineTests {
-// 		outputData, msg, err := ReplaceLine(testCase.action, testCase.repoName, testCase.fileData)
+func TestReplaceLineRegex(t *testing.T) {
+	assert := assert.New(t)
+	action := config.Action{
+		Source: "NODE_ENV=test",
+		Target: "NODE_ENV=([a-zA-Z-]+)",
+	}
+	input := []byte("NODE_ENV=random\n")
+	outputData, msg, err := ReplaceLine(action, "node-boilerplate", input)
 
-// 		logPrefix := fmt.Sprintf("ReplaceLine(%+v, %s):", testCase.action, testCase.repoName)
-// 		if !bytes.Equal(outputData, testCase.outputData) {
-// 			t.Errorf("%s FAILED, outputData bytes are not equal", logPrefix)
-// 		} else if msg != testCase.msg {
-// 			t.Errorf("%s FAILED, expected msg '%s' but got '%s'", logPrefix, testCase.msg, msg)
-// 		} else if err != testCase.err {
-// 			t.Errorf("%s FAILED, expected err %s but got %s", logPrefix, err, testCase.err)
-// 		} else {
-// 			t.Logf("%s PASSED, all return values equal, %v, %s, %v", logPrefix, outputData, msg, err)
-// 		}
-// 	}
-// }
+	assert.Equal("NODE_ENV=test\n", string(outputData))
+	assert.NotEmpty(msg)
+	assert.NoError(err)
+}
 
-// func TestDeleteLineError(t *testing.T) {
+func TestRepaceLineError(t *testing.T) {
+	assert := assert.New(t)
+	action := config.Action{
+		Source: "NODE_ENV=test",
+		Target: "NODE_ENV=($&^",
+	}
+	input := []byte("NODE_ENV=development\n")
+	outputData, msg, err := ReplaceLine(action, "node-boilerplate", input)
 
-// }
+	assert.Nil(outputData)
+	assert.Empty(msg)
+	assert.Error(err)
+}
+
+func TestDeleteLine(t *testing.T) {
+	assert := assert.New(t)
+	action := config.Action{
+		Target: "NODE_ENV=test",
+	}
+	input := []byte("PORT=8080\nNODE_ENV=test\n")
+	outputData, msg, err := DeleteLine(action, "node-boilerplate", input)
+
+	assert.Equal("PORT=8080\n", string(outputData))
+	assert.NotEmpty(msg)
+	assert.NoError(err)
+}
