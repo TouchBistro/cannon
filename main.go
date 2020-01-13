@@ -7,19 +7,15 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/TouchBistro/cannon/action"
 	"github.com/TouchBistro/cannon/config"
 	"github.com/TouchBistro/cannon/fatal"
-	g "github.com/TouchBistro/cannon/git"
+	"github.com/TouchBistro/cannon/git"
 	"github.com/TouchBistro/cannon/util"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
 	flag "github.com/spf13/pflag"
-	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
 const (
@@ -36,7 +32,7 @@ var (
 )
 
 // Make sure repo is on master with latest changes
-func prepareRepo(repo config.Repo) (*git.Repository, *git.Worktree, error) {
+func prepareRepo(repo config.Repo) (*git.Repository, error) {
 	parts := strings.Split(repo.Name, "/")
 	orgName := parts[0]
 	repoName := parts[1]
@@ -46,62 +42,46 @@ func prepareRepo(repo config.Repo) (*git.Repository, *git.Worktree, error) {
 	if !util.FileOrDirExists(path) {
 		fmt.Printf("Repo %s does not exist, cloning...", repo.Name)
 
-		r, w, err := g.Clone(orgName, repoName, config.CannonDir())
+		r, err := git.Clone(orgName, repoName, config.CannonDir())
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to clone repo %s", repo.Name)
+			return nil, errors.Wrapf(err, "failed to clone repo %s", repo.Name)
 		}
 
 		fmt.Printf("Cloned repo %s to %s\n", repo.Name, config.CannonDir())
-		return r, w, nil
+		return r, nil
 	}
 
-	r, err := git.PlainOpen(path)
+	r, err := git.Open(path)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to open repo at path %s", path)
-	}
-
-	w, err := r.Worktree()
-	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to get worktree for repo %s", repo.Name)
+		return nil, errors.Wrapf(err, "failed to open repo %s", repo.Name)
 	}
 
 	branchRef, err := r.Head()
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to get HEAD for repo %s", repo.Name)
+		return nil, errors.Wrapf(err, "failed to get HEAD for repo %s", repo.Name)
 	}
 
-	// Discard any changes and switch to master
-	err = w.Clean(&git.CleanOptions{
-		Dir: true,
-	})
+	// Discard any changes and switch to base branch
+	baseBranch := repo.BaseBranch()
+	err = git.CleanAndCheckout(r, baseBranch, repo.Name)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to clean repo %s", repo.Name)
-	}
-
-	err = w.Checkout(&git.CheckoutOptions{
-		Branch: plumbing.ReferenceName("refs/heads/" + repo.BaseBranch()),
-		Force:  true,
-	})
-	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to switch to master branch in repo %s", repo.Name)
+		return nil, errors.Wrapf(err, "failed to clean up repo %s", repo.Name)
 	}
 
 	// Pull latest changes
-	err = g.Pull(w, repo.Name)
+	err = git.Pull(r, repo.Name)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to update master branch for repo %s", repo.Name)
+		return nil, errors.Wrapf(err, "failed to update %s branch for repo %s", baseBranch, repo.Name)
 	}
 
-	// Head returns refs/heads/<BRANCH>, need to get branch
-	refParts := strings.Split(string(branchRef.Name()), "/")
-	branch := refParts[len(refParts)-1]
-	if branch == repo.BaseBranch() {
-		return r, w, nil
+	// Check if already on base branch
+	if branchRef.Name().Short() == baseBranch {
+		return r, nil
 	}
 
 	// Delete old branch
-	err = r.Storer.RemoveReference(branchRef.Name())
-	return r, w, errors.Wrapf(err, "failed to delete branch %s in repo %s", branch, repo)
+	err = git.DeleteBranch(r, branchRef.Name().Short(), repo.Name)
+	return r, errors.Wrapf(err, "failed to delete previous branch in repo %s", repo.Name)
 }
 
 func executeTextAction(a config.Action, repoPath, repoName string) (string, error) {
@@ -170,23 +150,11 @@ func executeAction(a config.Action, repoPath, repoName string) (string, error) {
 
 func performActions(
 	r *git.Repository,
-	w *git.Worktree,
 	actions []config.Action,
 	branchName string,
 	repo config.Repo,
 ) (string, error) {
-	headRef, err := r.Head()
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to get HEAD for repo %s", repo.Name)
-	}
-
-	// Create and checkout new branch
-	branchRef := plumbing.NewHashReference(plumbing.ReferenceName("refs/heads/"+branchName), headRef.Hash())
-	err = w.Checkout(&git.CheckoutOptions{
-		Hash:   branchRef.Hash(),
-		Branch: branchRef.Name(),
-		Create: true,
-	})
+	err := git.CreateBranch(r, branchName, repo.Name)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to create new branch %s in repo %s", branchName, repo.Name)
 	}
@@ -206,23 +174,12 @@ func performActions(
 	}
 
 	// Commit changes and push
-	err = g.Add(repoName, path, ".")
+	err = git.Add(repoName, path, ".")
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to stage change files in repo %s", repo.Name)
 	}
 
-	name, email, err := g.User()
-	if err != nil {
-		return "", errors.Wrap(err, "failed to get git user info")
-	}
-
-	_, err = w.Commit(commitMessage, &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  name,
-			Email: email,
-			When:  time.Now(),
-		},
-	})
+	err = git.Commit(r, commitMessage, repo.Name)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to commit changes in repo %s", repo.Name)
 	}
@@ -231,18 +188,16 @@ func performActions(
 		return "", nil
 	}
 
-	err = r.Push(&git.PushOptions{
-		RemoteName: "origin",
-	})
+	err = git.Push(r, repo.Name)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to push changes to remote for repo %s", repo.Name)
 	}
 
 	if noPR {
-		return g.CreatePRURL(repo.Name, branchName), nil
+		return git.CreatePRURL(repo.Name, branchName), nil
 	}
 
-	return g.CreatePR(repo.Name, repo.BaseBranch(), branchName, g.CreatePRDescription(results))
+	return git.CreatePR(repo.Name, repo.BaseBranch(), branchName, git.CreatePRDescription(results))
 }
 
 func parseFlags() {
@@ -293,14 +248,14 @@ func main() {
 
 	// Make sure repos are up to date
 	for i, repo := range conf.Repos {
-		r, w, err := prepareRepo(repo)
+		r, err := prepareRepo(repo)
 
 		fmt.Printf("%sRunning actions for repo %s%s\n", cyanColor, repo.Name, resetColor)
 		if err != nil {
 			fatal.ExitErrf(err, "Failed to prepare repo %s.", repo)
 		}
 
-		url, err := performActions(r, w, conf.Actions, branchName, repo)
+		url, err := performActions(r, conf.Actions, branchName, repo)
 		if err != nil {
 			fatal.ExitErrf(err, "Failed to perform actions on repo %s.", repo)
 		}
