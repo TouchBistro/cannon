@@ -51,6 +51,7 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 		return r, nil
 	}
 
+	fmt.Printf("Repo %s exits, updating...", repo.Name)
 	r, err := git.Open(path)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open repo %s", repo.Name)
@@ -81,6 +82,8 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 
 	// Delete old branch
 	err = git.DeleteBranch(r, branchRef.Name().Short(), repo.Name)
+
+	fmt.Printf("Updated repo %s", repo.Name)
 	return r, errors.Wrapf(err, "failed to delete previous branch in repo %s", repo.Name)
 }
 
