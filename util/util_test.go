@@ -5,18 +5,20 @@ import (
 	"testing"
 )
 
+const fixtures = "../_fixtures"
+
 func TestDirExists(t *testing.T) {
-	path := "../_fixtures/testdir"
+	path := fixtures + "/text_tests"
 	assert.True(t, FileOrDirExists(path))
 }
 
 func TestFileExists(t *testing.T) {
-	path := "../_fixtures/testdir/test.txt"
+	path := fixtures + "/text_tests/test.txt"
 	assert.True(t, FileOrDirExists(path))
 }
 
 func TestFileNotExists(t *testing.T) {
-	path := "../_fixtures/notafile.txt"
+	path := fixtures + "/notafile.txt"
 	assert.False(t, FileOrDirExists(path))
 }
 
@@ -46,7 +48,7 @@ func TestReadYaml(t *testing.T) {
 }
 
 func TestReadYamlError(t *testing.T) {
-	path := "../_fixtures/invalid_yml"
+	path := fixtures + "/invalid_yml"
 	var config yamlConfig
 	err := ReadYaml(path, &config)
 
@@ -54,7 +56,7 @@ func TestReadYamlError(t *testing.T) {
 }
 
 func TestYamlNoFile(t *testing.T) {
-	path := "../_fixtures/notafile.yml"
+	path := fixtures + "/notafile.yml"
 	var config yamlConfig
 	err := ReadYaml(path, &config)
 
