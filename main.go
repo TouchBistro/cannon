@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -87,73 +86,9 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 	return r, errors.Wrapf(err, "failed to delete previous branch in repo %s", repo.Name)
 }
 
-func executeTextAction(a config.Action, repoPath, repoName string) (string, error) {
-	filePath := fmt.Sprintf("%s/%s", repoPath, a.Path)
-
-	// Do lazy way for now, can optimize later if needed
-	fileData, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to read file %s", filePath)
-	}
-
-	var actionFn func(config.Action, string, []byte) ([]byte, string, error)
-	switch a.Type {
-	case config.ActionReplaceLine:
-		actionFn = action.ReplaceLine
-	case config.ActionDeleteLine:
-		actionFn = action.DeleteLine
-	case config.ActionReplaceText:
-		actionFn = action.ReplaceText
-	case config.ActionAppendText:
-		actionFn = action.AppendText
-	case config.ActionDeleteText:
-		actionFn = action.DeleteText
-	default:
-		return "", errors.New(fmt.Sprintf("invalid action type %s", a.Type))
-	}
-
-	outputData, msg, err := actionFn(a, repoName, fileData)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repoName)
-	}
-
-	err = ioutil.WriteFile(filePath, []byte(outputData), 0644)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to write file %s", filePath)
-	}
-
-	return msg, nil
-}
-
-func executeAction(a config.Action, repoPath, repoName string) (string, error) {
-	if strings.HasSuffix(a.Type, "Line") || strings.HasSuffix(a.Type, "Text") {
-		msg, err := executeTextAction(a, repoPath, repoName)
-		if err != nil {
-			return "", errors.Wrapf(err, "failed to execute text action %s", a.Type)
-		}
-
-		return msg, err
-	}
-
-	switch a.Type {
-	case config.ActionCreateFile:
-		return action.CreateFile(a, repoPath, repoName)
-	case config.ActionDeleteFile:
-		return action.DeleteFile(a, repoPath)
-	case config.ActionReplaceFile:
-		return action.ReplaceFile(a, repoPath, repoName)
-	case config.ActionCreateOrReplaceFile:
-		return action.CreateOrReplaceFile(a, repoPath, repoName)
-	case config.ActionRunCommand:
-		return action.RunCommand(a, repoPath)
-	default:
-		return "", errors.New(fmt.Sprintf("invalid action type %s", a.Type))
-	}
-}
-
 func performActions(
 	r *git.Repository,
-	actions []config.Action,
+	actions []action.Action,
 	branchName string,
 	repo config.Repo,
 ) (string, error) {
@@ -167,7 +102,7 @@ func performActions(
 	path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
 	results := make([]string, len(actions))
 	for i, a := range actions {
-		result, err := executeAction(a, path, repoName)
+		result, err := action.ExecuteAction(a, path, repoName)
 		if err != nil {
 			return "", errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repo.Name)
 		}

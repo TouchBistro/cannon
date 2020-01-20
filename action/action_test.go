@@ -84,3 +84,7 @@ func TestReplaceLine(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteLineError(t *testing.T) {
+
+}

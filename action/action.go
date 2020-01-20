@@ -3,215 +3,117 @@ package action
 import (
 	"fmt"
 	"io/ioutil"
-	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 
-	"github.com/TouchBistro/cannon/config"
-	"github.com/TouchBistro/cannon/util"
 	"github.com/pkg/errors"
 )
+
+const (
+	ActionReplaceLine         = "replaceLine"
+	ActionDeleteLine          = "deleteLine"
+	ActionReplaceText         = "replaceText"
+	ActionAppendText          = "appendText"
+	ActionDeleteText          = "deleteText"
+	ActionCreateFile          = "createFile"
+	ActionDeleteFile          = "deleteFile"
+	ActionReplaceFile         = "replaceFile"
+	ActionCreateOrReplaceFile = "createOrReplaceFile"
+	ActionRunCommand          = "runCommand"
+)
+
+type Action struct {
+	Type   string `yaml:"type"`
+	Source string `yaml:"source"`
+	Target string `yaml:"target"`
+	Path   string `yaml:"path"`
+	Run    string `yaml:"run"`
+}
+
+func (a Action) IsLineAction() bool {
+	return strings.HasSuffix(a.Type, "Line")
+}
+
+func (a Action) IsTextAction() bool {
+	return strings.HasSuffix(a.Type, "Text")
+}
 
 func expandRepoVar(source, repoName string) string {
 	return strings.ReplaceAll(source, "$REPONAME", repoName)
 }
 
-func copyFile(fromPath, toPath, repoName string) error {
+func executeTextAction(action Action, repoPath, repoName string) (string, error) {
+	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
+
 	// Do lazy way for now, can optimize later if needed
-	data, err := ioutil.ReadFile(fromPath)
+	fileData, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "failed to read file %s", fromPath)
+		return "", errors.Wrapf(err, "failed to read file %s", filePath)
 	}
 
-	contents := expandRepoVar(string(data), repoName)
-	err = ioutil.WriteFile(toPath, []byte(contents), 0644)
-	return errors.Wrapf(err, "failed to write file %s", toPath)
+	action.Source = expandRepoVar(action.Source, repoName)
+	action.Target = expandRepoVar(action.Target, repoName)
+
+	// Enable multi-line mode by adding flag if text action
+	// https://golang.org/pkg/regexp/syntax/
+	regexStr := action.Target
+	if action.IsTextAction() {
+		regexStr = "(?m)" + regexStr
+	}
+
+	regex, err := regexp.Compile(regexStr)
+	if err != nil {
+		return "", errors.Wrap(err, "unable to compile regex from action target")
+	}
+
+	var actionFn func(Action, *regexp.Regexp, []byte) ([]byte, string)
+	switch action.Type {
+	case ActionReplaceLine:
+		actionFn = replaceLine
+	case ActionDeleteLine:
+		actionFn = deleteLine
+	case ActionReplaceText:
+		actionFn = replaceText
+	case ActionAppendText:
+		actionFn = appendText
+	case ActionDeleteText:
+		actionFn = deleteText
+	default:
+		return "", errors.New(fmt.Sprintf("invalid action type %s", action.Type))
+	}
+
+	outputData, msg := actionFn(action, regex, fileData)
+
+	err = ioutil.WriteFile(filePath, []byte(outputData), 0644)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to write file %s", filePath)
+	}
+
+	return msg, nil
 }
 
-func ReplaceLine(action config.Action, repoName string, fileData []byte) ([]byte, string, error) {
-	sourceStr := expandRepoVar(action.Source, repoName)
-	targetStr := expandRepoVar(action.Target, repoName)
-	regex, err := regexp.Compile(targetStr)
-	if err != nil {
-		return nil, "", errors.Wrap(err, "unable to compile regex from action target")
-	}
-
-	lines := strings.Split(string(fileData), "\n")
-
-	for i, line := range lines {
-		if regex.MatchString(line) {
-			lines[i] = sourceStr
+func ExecuteAction(action Action, repoPath, repoName string) (string, error) {
+	if action.IsLineAction() || action.IsTextAction() {
+		msg, err := executeTextAction(action, repoPath, repoName)
+		if err != nil {
+			return "", errors.Wrapf(err, "failed to execute text action %s", action.Type)
 		}
+
+		return msg, err
 	}
 
-	output := strings.Join(lines, "\n")
-	msg := fmt.Sprintf("Replaced line `%s` with `%s` in `%s`", targetStr, sourceStr, action.Path)
-	return []byte(output), msg, nil
-}
-
-func DeleteLine(action config.Action, repoName string, fileData []byte) ([]byte, string, error) {
-	targetStr := expandRepoVar(action.Target, repoName)
-	regex, err := regexp.Compile(targetStr)
-	if err != nil {
-		return nil, "", errors.Wrap(err, "unable to compile regex from action target")
+	switch action.Type {
+	case ActionCreateFile:
+		return createFile(action, repoPath, repoName)
+	case ActionDeleteFile:
+		return deleteFile(action, repoPath)
+	case ActionReplaceFile:
+		return replaceFile(action, repoPath, repoName)
+	case ActionCreateOrReplaceFile:
+		return createOrReplaceFile(action, repoPath, repoName)
+	case ActionRunCommand:
+		return runCommand(action, repoPath)
+	default:
+		return "", errors.New(fmt.Sprintf("invalid action type %s", action.Type))
 	}
-
-	lines := strings.Split(string(fileData), "\n")
-	filteredLines := make([]string, 0)
-
-	// Filter all lines that match the line to delete
-	for _, line := range lines {
-		if !regex.MatchString(line) {
-			filteredLines = append(filteredLines, line)
-		}
-	}
-
-	output := strings.Join(filteredLines, "\n")
-	msg := fmt.Sprintf("Deleted line `%s` in `%s`\n", targetStr, action.Path)
-	return []byte(output), msg, nil
-}
-
-func ReplaceText(action config.Action, repoName string, fileData []byte) ([]byte, string, error) {
-	targetStr := expandRepoVar(action.Target, repoName)
-	regex, err := regexp.Compile("(?m)" + targetStr)
-	if err != nil {
-		return nil, "", errors.Wrap(err, "unable to compile regex from action target")
-	}
-
-	sourceStr := expandRepoVar(action.Source, repoName)
-	contents := regex.ReplaceAllString(string(fileData), sourceStr)
-
-	msg := fmt.Sprintf("Replaced text `%s` with `%s` in `%s`", targetStr, sourceStr, action.Path)
-	return []byte(contents), msg, nil
-}
-
-func AppendText(action config.Action, repoName string, fileData []byte) ([]byte, string, error) {
-	targetStr := expandRepoVar(action.Target, repoName)
-	regex, err := regexp.Compile("(?m)" + targetStr)
-	if err != nil {
-		return nil, "", errors.Wrap(err, "unable to compile regex from action target")
-	}
-
-	sourceStr := expandRepoVar(action.Source, repoName)
-	contents := regex.ReplaceAllStringFunc(string(fileData), func(target string) string {
-		return target + sourceStr
-	})
-
-	msg := fmt.Sprintf("Appended text `%s` to all occurrences of `%s` in `%s`", sourceStr, targetStr, action.Path)
-	return []byte(contents), msg, nil
-}
-
-func DeleteText(action config.Action, repoName string, fileData []byte) ([]byte, string, error) {
-	targetStr := expandRepoVar(action.Target, repoName)
-	regex, err := regexp.Compile("(?m)" + targetStr)
-	if err != nil {
-		return nil, "", errors.Wrap(err, "unable to compile regex from action target")
-	}
-
-	// Get a slice of all substrings that don't match regex
-	components := regex.Split(string(fileData), -1)
-	contents := strings.Join(components, "")
-
-	msg := fmt.Sprintf("Deleted all occurrences of `%s` in `%s`\n", targetStr, action.Path)
-	return []byte(contents), msg, nil
-}
-
-func CreateFile(action config.Action, repoPath, repoName string) (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", errors.Wrap(err, "unable to get current working directory")
-	}
-	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
-
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-	if util.FileOrDirExists(filePath) {
-		return "", errors.New(fmt.Sprintf("File at path %s already exists", filePath))
-	}
-
-	err = copyFile(sourceFilePath, filePath, repoName)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to create file at %s", filePath)
-	}
-
-	return fmt.Sprintf("Created file `%s`", action.Path), nil
-}
-
-func DeleteFile(action config.Action, repoPath string) (string, error) {
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-	if !util.FileOrDirExists(filePath) {
-		return "", errors.New(fmt.Sprintf("File at path %s does not exist", filePath))
-	}
-
-	err := os.Remove(filePath)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to delete file %s", filePath)
-	}
-
-	return fmt.Sprintf("Deleted file `%s`", action.Path), nil
-}
-
-func ReplaceFile(action config.Action, repoPath, repoName string) (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", errors.Wrap(err, "unable to get current working directory")
-	}
-	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
-
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-	if !util.FileOrDirExists(filePath) {
-		return "", errors.New(fmt.Sprintf("File at path %s does not exist", filePath))
-	}
-
-	err = copyFile(sourceFilePath, filePath, repoName)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to replace file at %s", filePath)
-	}
-
-	return fmt.Sprintf("Replaced file `%s`", action.Path), nil
-}
-
-func CreateOrReplaceFile(action config.Action, repoPath, repoName string) (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", errors.Wrap(err, "unable to get current working directory")
-	}
-	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
-
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-
-	err = copyFile(sourceFilePath, filePath, repoName)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to create or replace file at %s", filePath)
-	}
-
-	return fmt.Sprintf("Created or replaced file `%s`", action.Path), nil
-}
-
-func RunCommand(action config.Action, repoPath string) (string, error) {
-	const shellPrefix = "SHELL >> "
-	var cmdName string
-	var args []string
-
-	if strings.HasPrefix(action.Run, shellPrefix) {
-		cmdName = "sh"
-		shellCmd := strings.TrimPrefix(action.Run, shellPrefix)
-		args = []string{"-c", shellCmd}
-	} else {
-		fields := strings.Fields(action.Run)
-		cmdName = fields[0]
-		args = fields[1:]
-	}
-
-	cmd := exec.Command(cmdName, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Dir = repoPath
-
-	err := cmd.Run()
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to run command %s at %s", action.Run, repoPath)
-	}
-
-	return fmt.Sprintf("Ran command `%s`", action.Run), nil
 }
