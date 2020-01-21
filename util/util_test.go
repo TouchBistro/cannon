@@ -6,14 +6,15 @@ import (
 )
 
 const fixtures = "../_fixtures"
+const textTests = fixtures + "/text_tests"
 
 func TestDirExists(t *testing.T) {
-	path := fixtures + "/text_tests"
+	path := textTests
 	assert.True(t, FileOrDirExists(path))
 }
 
 func TestFileExists(t *testing.T) {
-	path := fixtures + "/text_tests/test.txt"
+	path := textTests + "/hype.md"
 	assert.True(t, FileOrDirExists(path))
 }
 
