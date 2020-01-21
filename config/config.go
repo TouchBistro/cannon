@@ -2,11 +2,13 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/TouchBistro/cannon/action"
 	"github.com/TouchBistro/cannon/util"
 	"github.com/pkg/errors"
+	"gopkg.in/yaml.v2"
 )
 
 type Repo struct {
@@ -24,7 +26,7 @@ var (
 	cannonDir string
 )
 
-func Init(path string) error {
+func Init(configReader io.Reader) error {
 	cannonDir = fmt.Sprintf("%s/.cannon", os.Getenv("HOME"))
 
 	// Create ~/.cannon directory if it doesn't exist
@@ -35,12 +37,9 @@ func Init(path string) error {
 		}
 	}
 
-	if !util.FileOrDirExists(path) {
-		return errors.Errorf("No such file %s", path)
-	}
-
-	err := util.ReadYaml(path, &config)
-	return errors.Wrapf(err, "couldn't read yaml file at %s", path)
+	dec := yaml.NewDecoder(configReader)
+	err := dec.Decode(&config)
+	return errors.Wrap(err, "couldn't read yaml config file")
 }
 
 func Config() *CannonConfig {

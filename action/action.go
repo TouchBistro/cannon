@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"os"
 	"regexp"
 	"strings"
 
+	"github.com/TouchBistro/cannon/util"
 	"github.com/pkg/errors"
 )
 
@@ -44,7 +44,7 @@ func expandRepoVar(source, repoName string) string {
 	return strings.ReplaceAll(source, "$REPONAME", repoName)
 }
 
-func executeTextAction(action Action, r io.Reader, w io.Writer, repoName string) (string, error) {
+func ExecuteTextAction(action Action, r io.Reader, w util.OffsetWriter, repoName string) (string, error) {
 	// Do lazy way for now, can optimize later if needed
 	fileData, err := ioutil.ReadAll(r)
 	if err != nil {
@@ -84,7 +84,7 @@ func executeTextAction(action Action, r io.Reader, w io.Writer, repoName string)
 
 	outputData, msg := actionFn(action, regex, fileData)
 
-	_, err = w.Write([]byte(outputData))
+	_, err = w.WriteAt([]byte(outputData), 0)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to write file %s", action.Path)
 	}
@@ -92,23 +92,7 @@ func executeTextAction(action Action, r io.Reader, w io.Writer, repoName string)
 	return msg, nil
 }
 
-func ExecuteAction(action Action, repoPath, repoName string) (string, error) {
-	if action.IsLineAction() || action.IsTextAction() {
-		filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-		file, err := os.Open(filePath)
-		if err != nil {
-			return "", errors.Wrapf(err, "failed to open file %s", filePath)
-		}
-		defer file.Close()
-
-		msg, err := executeTextAction(action, file, file, repoName)
-		if err != nil {
-			return "", errors.Wrapf(err, "failed to execute text action %s", action.Type)
-		}
-
-		return msg, err
-	}
-
+func ExecuteFileAction(action Action, repoPath, repoName string) (string, error) {
 	switch action.Type {
 	case ActionCreateFile:
 		return createFile(action, repoPath, repoName)
