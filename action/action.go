@@ -2,7 +2,9 @@ package action
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
+	"os"
 	"regexp"
 	"strings"
 
@@ -42,13 +44,11 @@ func expandRepoVar(source, repoName string) string {
 	return strings.ReplaceAll(source, "$REPONAME", repoName)
 }
 
-func executeTextAction(action Action, repoPath, repoName string) (string, error) {
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
-
+func executeTextAction(action Action, r io.Reader, w io.Writer, repoName string) (string, error) {
 	// Do lazy way for now, can optimize later if needed
-	fileData, err := ioutil.ReadFile(filePath)
+	fileData, err := ioutil.ReadAll(r)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to read file %s", filePath)
+		return "", errors.Wrapf(err, "failed to read file %s", action.Path)
 	}
 
 	action.Source = expandRepoVar(action.Source, repoName)
@@ -84,9 +84,9 @@ func executeTextAction(action Action, repoPath, repoName string) (string, error)
 
 	outputData, msg := actionFn(action, regex, fileData)
 
-	err = ioutil.WriteFile(filePath, []byte(outputData), 0644)
+	_, err = w.Write([]byte(outputData))
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to write file %s", filePath)
+		return "", errors.Wrapf(err, "failed to write file %s", action.Path)
 	}
 
 	return msg, nil
@@ -94,7 +94,14 @@ func executeTextAction(action Action, repoPath, repoName string) (string, error)
 
 func ExecuteAction(action Action, repoPath, repoName string) (string, error) {
 	if action.IsLineAction() || action.IsTextAction() {
-		msg, err := executeTextAction(action, repoPath, repoName)
+		filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
+		file, err := os.Open(filePath)
+		if err != nil {
+			return "", errors.Wrapf(err, "failed to open file %s", filePath)
+		}
+		defer file.Close()
+
+		msg, err := executeTextAction(action, file, file, repoName)
 		if err != nil {
 			return "", errors.Wrapf(err, "failed to execute text action %s", action.Type)
 		}
