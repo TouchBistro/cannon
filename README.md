@@ -142,3 +142,11 @@ repos:
 ```
 
 This would create PRs with `develop` as the base branch.
+
+## Contributing
+
+See [contributing](CONTRIBUTING.md) for instructions on how to contribute to `cannon`. PRs welcome!
+
+## License
+
+MIT © TouchBistro, see [LICENSE](LICENSE) for details.
