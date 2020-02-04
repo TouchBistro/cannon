@@ -88,7 +88,7 @@ func createFile(action Action, repoPath, repoName string) (string, error) {
 
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 	if util.FileOrDirExists(filePath) {
-		return "", errors.New(fmt.Sprintf("File at path %s already exists", filePath))
+		return "", errors.Errorf("File at path %s already exists", filePath)
 	}
 
 	err = copyFile(sourceFilePath, filePath, repoName)
@@ -102,7 +102,7 @@ func createFile(action Action, repoPath, repoName string) (string, error) {
 func deleteFile(action Action, repoPath string) (string, error) {
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 	if !util.FileOrDirExists(filePath) {
-		return "", errors.New(fmt.Sprintf("File at path %s does not exist", filePath))
+		return "", errors.Errorf("File at path %s does not exist", filePath)
 	}
 
 	err := os.Remove(filePath)
@@ -122,7 +122,7 @@ func replaceFile(action Action, repoPath, repoName string) (string, error) {
 
 	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
 	if !util.FileOrDirExists(filePath) {
-		return "", errors.New(fmt.Sprintf("File at path %s does not exist", filePath))
+		return "", errors.Errorf("File at path %s does not exist", filePath)
 	}
 
 	err = copyFile(sourceFilePath, filePath, repoName)

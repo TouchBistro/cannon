@@ -1,7 +1,6 @@
 package action
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"regexp"
@@ -79,7 +78,7 @@ func ExecuteTextAction(action Action, r io.Reader, w util.OffsetWriter, repoName
 	case ActionDeleteText:
 		actionFn = deleteText
 	default:
-		return "", errors.New(fmt.Sprintf("invalid action type %s", action.Type))
+		return "", errors.Errorf("invalid action type %s", action.Type)
 	}
 
 	outputData, msg := actionFn(action, regex, fileData)
@@ -105,6 +104,6 @@ func ExecuteFileAction(action Action, repoPath, repoName string) (string, error)
 	case ActionRunCommand:
 		return runCommand(action, repoPath)
 	default:
-		return "", errors.New(fmt.Sprintf("invalid action type %s", action.Type))
+		return "", errors.Errorf("invalid action type %s", action.Type)
 	}
 }
