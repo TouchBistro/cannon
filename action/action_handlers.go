@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -84,9 +85,9 @@ func createFile(action Action, repoPath, repoName string) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "unable to get current working directory")
 	}
-	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
+	sourceFilePath := filepath.Join(cwd, action.Source)
 
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
+	filePath := filepath.Join(repoPath, action.Path)
 	if util.FileOrDirExists(filePath) {
 		return "", errors.Errorf("File at path %s already exists", filePath)
 	}
@@ -100,7 +101,7 @@ func createFile(action Action, repoPath, repoName string) (string, error) {
 }
 
 func deleteFile(action Action, repoPath string) (string, error) {
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
+	filePath := filepath.Join(repoPath, action.Path)
 	if !util.FileOrDirExists(filePath) {
 		return "", errors.Errorf("File at path %s does not exist", filePath)
 	}
@@ -118,9 +119,9 @@ func replaceFile(action Action, repoPath, repoName string) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "unable to get current working directory")
 	}
-	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
+	sourceFilePath := filepath.Join(cwd, action.Source)
 
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
+	filePath := filepath.Join(repoPath, action.Path)
 	if !util.FileOrDirExists(filePath) {
 		return "", errors.Errorf("File at path %s does not exist", filePath)
 	}
@@ -138,9 +139,9 @@ func createOrReplaceFile(action Action, repoPath, repoName string) (string, erro
 	if err != nil {
 		return "", errors.Wrap(err, "unable to get current working directory")
 	}
-	sourceFilePath := fmt.Sprintf("%s/%s", cwd, action.Source)
+	sourceFilePath := filepath.Join(cwd, action.Source)
 
-	filePath := fmt.Sprintf("%s/%s", repoPath, action.Path)
+	filePath := filepath.Join(repoPath, action.Path)
 
 	err = copyFile(sourceFilePath, filePath, repoName)
 	if err != nil {

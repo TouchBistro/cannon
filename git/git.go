@@ -3,6 +3,7 @@ package git
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,7 +18,7 @@ type Repository = git.Repository
 
 func Clone(orgName, repoName, destDir string) (*git.Repository, error) {
 	repoURL := fmt.Sprintf("git@github.com:%s/%s.git", orgName, repoName)
-	destPath := fmt.Sprintf("%s/%s", destDir, repoName)
+	destPath := filepath.Join(destDir, repoName)
 
 	r, err := git.PlainClone(destPath, false, &git.CloneOptions{
 		URL:      repoURL,
