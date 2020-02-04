@@ -1,9 +1,9 @@
 package config
 
 import (
-	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/TouchBistro/cannon/action"
 	"github.com/TouchBistro/cannon/util"
@@ -27,7 +27,7 @@ var (
 )
 
 func Init(configReader io.Reader) error {
-	cannonDir = fmt.Sprintf("%s/.cannon", os.Getenv("HOME"))
+	cannonDir = filepath.Join(os.Getenv("HOME"), ".cannon")
 
 	// Create ~/.cannon directory if it doesn't exist
 	if !util.FileOrDirExists(cannonDir) {

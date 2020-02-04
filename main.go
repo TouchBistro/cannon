@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/TouchBistro/cannon/action"
@@ -35,7 +36,7 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 	parts := strings.Split(repo.Name, "/")
 	orgName := parts[0]
 	repoName := parts[1]
-	path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
+	path := filepath.Join(config.CannonDir(), repoName)
 
 	// Repo doesn't exist, clone and then we are good to go
 	if !util.FileOrDirExists(path) {
@@ -99,13 +100,13 @@ func performActions(
 
 	// Execute actions
 	repoName := strings.Split(repo.Name, "/")[1]
-	path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
+	path := filepath.Join(config.CannonDir(), repoName)
 	results := make([]string, len(actions))
 
 	for i, a := range actions {
 		var result string
 		if a.IsLineAction() || a.IsTextAction() {
-			filePath := fmt.Sprintf("%s/%s", path, a.Path)
+			filePath := filepath.Join(path, a.Path)
 			file, err := os.OpenFile(filePath, os.O_RDWR, os.ModePerm)
 			if err != nil {
 				return "", errors.Wrapf(err, "failed to open file %s", filePath)
