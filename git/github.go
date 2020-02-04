@@ -63,7 +63,7 @@ func CreatePR(repo, base, branch, desc string) (string, error) {
 	defer res.Body.Close()
 
 	if res.StatusCode != 201 {
-		return "", errors.New(fmt.Sprintf("Got %d response from GitHub API", res.StatusCode))
+		return "", errors.Errorf("Got %d response from GitHub API", res.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(res.Body)

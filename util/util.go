@@ -6,26 +6,17 @@ import (
 	"os/exec"
 
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v2"
 )
+
+type OffsetWriter interface {
+	WriteAt(b []byte, off int64) (n int, err error)
+}
 
 func FileOrDirExists(path string) bool {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false
 	}
 	return true
-}
-
-func ReadYaml(path string, val interface{}) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return errors.Wrapf(err, "failed to open file %s", path)
-	}
-	defer file.Close()
-
-	dec := yaml.NewDecoder(file)
-	err = dec.Decode(val)
-	return errors.Wrapf(err, "failed to decode yaml file %s", path)
 }
 
 func ExecOutput(name string, args ...string) (string, error) {

@@ -2,19 +2,14 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"os"
 
+	"github.com/TouchBistro/cannon/action"
 	"github.com/TouchBistro/cannon/util"
 	"github.com/pkg/errors"
+	"gopkg.in/yaml.v2"
 )
-
-type Action struct {
-	Type   string `yaml:"type"`
-	Source string `yaml:"source"`
-	Target string `yaml:"target"`
-	Path   string `yaml:"path"`
-	Run    string `yaml:"run"`
-}
 
 type Repo struct {
 	Name string `yaml:"name"`
@@ -22,29 +17,16 @@ type Repo struct {
 }
 
 type CannonConfig struct {
-	Repos   []Repo   `yaml:"repos"`
-	Actions []Action `yaml:"actions"`
+	Repos   []Repo          `yaml:"repos"`
+	Actions []action.Action `yaml:"actions"`
 }
-
-const (
-	ActionReplaceLine         = "replaceLine"
-	ActionDeleteLine          = "deleteLine"
-	ActionReplaceText         = "replaceText"
-	ActionAppendText          = "appendText"
-	ActionDeleteText          = "deleteText"
-	ActionCreateFile          = "createFile"
-	ActionDeleteFile          = "deleteFile"
-	ActionReplaceFile         = "replaceFile"
-	ActionCreateOrReplaceFile = "createOrReplaceFile"
-	ActionRunCommand          = "runCommand"
-)
 
 var (
 	config    CannonConfig
 	cannonDir string
 )
 
-func Init(path string) error {
+func Init(configReader io.Reader) error {
 	cannonDir = fmt.Sprintf("%s/.cannon", os.Getenv("HOME"))
 
 	// Create ~/.cannon directory if it doesn't exist
@@ -55,12 +37,9 @@ func Init(path string) error {
 		}
 	}
 
-	if !util.FileOrDirExists(path) {
-		return errors.Errorf("No such file %s", path)
-	}
-
-	err := util.ReadYaml(path, &config)
-	return errors.Wrapf(err, "couldn't read yaml file at %s", path)
+	dec := yaml.NewDecoder(configReader)
+	err := dec.Decode(&config)
+	return errors.Wrap(err, "couldn't read yaml config file")
 }
 
 func Config() *CannonConfig {

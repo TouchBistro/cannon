@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -51,7 +50,7 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 		return r, nil
 	}
 
-	fmt.Printf("Repo %s exits, updating...", repo.Name)
+	fmt.Printf("Repo %s exits, updating...\n", repo.Name)
 	r, err := git.Open(path)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open repo %s", repo.Name)
@@ -83,77 +82,13 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 	// Delete old branch
 	err = git.DeleteBranch(r, branchRef.Name().Short(), repo.Name)
 
-	fmt.Printf("Updated repo %s", repo.Name)
+	fmt.Printf("Updated repo %s\n", repo.Name)
 	return r, errors.Wrapf(err, "failed to delete previous branch in repo %s", repo.Name)
-}
-
-func executeTextAction(a config.Action, repoPath, repoName string) (string, error) {
-	filePath := fmt.Sprintf("%s/%s", repoPath, a.Path)
-
-	// Do lazy way for now, can optimize later if needed
-	fileData, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to read file %s", filePath)
-	}
-
-	var actionFn func(config.Action, string, []byte) ([]byte, string, error)
-	switch a.Type {
-	case config.ActionReplaceLine:
-		actionFn = action.ReplaceLine
-	case config.ActionDeleteLine:
-		actionFn = action.DeleteLine
-	case config.ActionReplaceText:
-		actionFn = action.ReplaceText
-	case config.ActionAppendText:
-		actionFn = action.AppendText
-	case config.ActionDeleteText:
-		actionFn = action.DeleteText
-	default:
-		return "", errors.New(fmt.Sprintf("invalid action type %s", a.Type))
-	}
-
-	outputData, msg, err := actionFn(a, repoName, fileData)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repoName)
-	}
-
-	err = ioutil.WriteFile(filePath, []byte(outputData), 0644)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to write file %s", filePath)
-	}
-
-	return msg, nil
-}
-
-func executeAction(a config.Action, repoPath, repoName string) (string, error) {
-	if strings.HasSuffix(a.Type, "Line") || strings.HasSuffix(a.Type, "Text") {
-		msg, err := executeTextAction(a, repoPath, repoName)
-		if err != nil {
-			return "", errors.Wrapf(err, "failed to execute text action %s", a.Type)
-		}
-
-		return msg, err
-	}
-
-	switch a.Type {
-	case config.ActionCreateFile:
-		return action.CreateFile(a, repoPath, repoName)
-	case config.ActionDeleteFile:
-		return action.DeleteFile(a, repoPath)
-	case config.ActionReplaceFile:
-		return action.ReplaceFile(a, repoPath, repoName)
-	case config.ActionCreateOrReplaceFile:
-		return action.CreateOrReplaceFile(a, repoPath, repoName)
-	case config.ActionRunCommand:
-		return action.RunCommand(a, repoPath)
-	default:
-		return "", errors.New(fmt.Sprintf("invalid action type %s", a.Type))
-	}
 }
 
 func performActions(
 	r *git.Repository,
-	actions []config.Action,
+	actions []action.Action,
 	branchName string,
 	repo config.Repo,
 ) (string, error) {
@@ -166,10 +101,26 @@ func performActions(
 	repoName := strings.Split(repo.Name, "/")[1]
 	path := fmt.Sprintf("%s/%s", config.CannonDir(), repoName)
 	results := make([]string, len(actions))
+
 	for i, a := range actions {
-		result, err := executeAction(a, path, repoName)
-		if err != nil {
-			return "", errors.Wrapf(err, "failed to execute action %s in repo %s", a.Type, repo.Name)
+		var result string
+		if a.IsLineAction() || a.IsTextAction() {
+			filePath := fmt.Sprintf("%s/%s", path, a.Path)
+			file, err := os.OpenFile(filePath, os.O_RDWR, os.ModePerm)
+			if err != nil {
+				return "", errors.Wrapf(err, "failed to open file %s", filePath)
+			}
+			defer file.Close()
+
+			result, err = action.ExecuteTextAction(a, file, file, repoName)
+			if err != nil {
+				return "", errors.Wrapf(err, "failed to execute text action %s in repo %s", a.Type, repo.Name)
+			}
+		} else {
+			result, err = action.ExecuteFileAction(a, path, repoName)
+			if err != nil {
+				return "", errors.Wrapf(err, "failed to execute file action %s in repo %s", a.Type, repo)
+			}
 		}
 
 		results[i] = result
@@ -219,7 +170,18 @@ func parseFlags() {
 func main() {
 	parseFlags()
 
-	err := config.Init(configPath)
+	// Handle config setup
+	if !util.FileOrDirExists(configPath) {
+		fatal.Exitf("No such file %s", configPath)
+	}
+
+	file, err := os.Open(configPath)
+	if err != nil {
+		fatal.ExitErrf(err, "Failed to open config file %s", configPath)
+	}
+	defer file.Close()
+
+	err = config.Init(file)
 	if err != nil {
 		fatal.ExitErr(err, "Failed reading config file.")
 	}
