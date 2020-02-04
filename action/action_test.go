@@ -2,6 +2,7 @@ package action
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
@@ -18,7 +19,13 @@ This section is pretty hype.
 `
 
 type MockWriter struct {
-	w bytes.Buffer
+	w *bytes.Buffer
+}
+
+func mockFile(contents string) (io.Reader, *MockWriter) {
+	r := strings.NewReader(contents)
+	mw := &MockWriter{w: bytes.NewBufferString(contents)}
+	return r, mw
 }
 
 func (mw *MockWriter) WriteAt(b []byte, off int64) (n int, err error) {
@@ -39,11 +46,8 @@ func TestReplaceLine(t *testing.T) {
 		Path:   textTests + "/hype.md",
 	}
 
-	r := strings.NewReader(inputText)
-	w := new(MockWriter)
-
-	w.WriteAt([]byte("asdasdasdasdasd"), 0)
-	msg, err := ExecuteTextAction(action, r, w, "node-boilerplate")
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
 
 	assert.NotEmpty(msg)
 	assert.NoError(err)
@@ -53,7 +57,7 @@ This file is ***hype***.
 
 ## Hype Section
 This section is pretty hype.
-`, w.String())
+`, mw.String())
 }
 
 func TestDeleteLine(t *testing.T) {
@@ -64,9 +68,8 @@ func TestDeleteLine(t *testing.T) {
 		Path:   textTests + "/hype.md",
 	}
 
-	r := strings.NewReader(inputText)
-	w := new(MockWriter)
-	msg, err := ExecuteTextAction(action, r, w, "node-boilerplate")
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
 
 	assert.NotEmpty(msg)
 	assert.NoError(err)
@@ -75,7 +78,7 @@ func TestDeleteLine(t *testing.T) {
 This file is ***hype***.
 
 This section is pretty hype.
-`, w.String())
+`, mw.String())
 }
 
 func TestReplaceText(t *testing.T) {
@@ -87,9 +90,8 @@ func TestReplaceText(t *testing.T) {
 		Path:   textTests + "/hype.md",
 	}
 
-	r := strings.NewReader(inputText)
-	w := new(MockWriter)
-	msg, err := ExecuteTextAction(action, r, w, "node-boilerplate")
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
 
 	assert.NotEmpty(msg)
 	assert.NoError(err)
@@ -99,7 +101,7 @@ This file is ***hype***.
 
 *****
 This section is pretty hype.
-`, w.String())
+`, mw.String())
 }
 
 func TestAppendText(t *testing.T) {
@@ -111,9 +113,8 @@ func TestAppendText(t *testing.T) {
 		Path:   textTests + "/hype.md",
 	}
 
-	r := strings.NewReader(inputText)
-	w := new(MockWriter)
-	msg, err := ExecuteTextAction(action, r, w, "node-boilerplate")
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
 
 	assert.NotEmpty(msg)
 	assert.NoError(err)
@@ -123,7 +124,7 @@ This file is ***hype***.
 
 ## Hype Section --- node-boilerplate
 This section is pretty hype.
-`, w.String())
+`, mw.String())
 }
 
 func TestDeleteText(t *testing.T) {
@@ -134,9 +135,8 @@ func TestDeleteText(t *testing.T) {
 		Path:   textTests + "/hype.md",
 	}
 
-	r := strings.NewReader(inputText)
-	w := new(MockWriter)
-	msg, err := ExecuteTextAction(action, r, w, "node-boilerplate")
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
 
 	assert.NotEmpty(msg)
 	assert.NoError(err)
@@ -146,7 +146,7 @@ This file is .
 
 ## Hype Section
 This section is pretty .
-`, w.String())
+`, mw.String())
 }
 
 func TestInvalidRegex(t *testing.T) {
@@ -158,9 +158,8 @@ func TestInvalidRegex(t *testing.T) {
 		Path:   textTests + "/hype.md",
 	}
 
-	r := strings.NewReader(inputText)
-	w := new(MockWriter)
-	msg, err := ExecuteTextAction(action, r, w, "node-boilerplate")
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
 
 	assert.Empty(msg)
 	assert.Error(err)
@@ -175,9 +174,8 @@ func TestInvalidTextAction(t *testing.T) {
 		Path:   textTests + "/hype.md",
 	}
 
-	r := strings.NewReader(inputText)
-	w := new(MockWriter)
-	msg, err := ExecuteTextAction(action, r, w, "node-boilerplate")
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
 
 	assert.Empty(msg)
 	assert.Error(err)
