@@ -2,6 +2,15 @@
 
 cannon is a small CLI tool that lets you make changes to multiple git repos.
 
+![](docs/resources/cannon.gif)
+
+## Why?
+Suppose you need to make the same change across multiple git repos.
+You could do it all by hand but this will get quite tedious especially with the more repos you have. Automation to the rescue!
+
+cannon makes it easy to perform a batch of changes on multiple git repos at once. It even creates GitHub PRs by default.
+All the heavy lifting is taken care of giving you time to do more important things.
+
 ## Setup Instructions
 
 1. Make sure you have go installed and set up.
@@ -104,7 +113,7 @@ The `cannon.yml` file is structured as follows:
 ```yml
 repos:
   - name: TouchBistro/touchbistro-node-boilerplate
-  - name: TouchBistro/ordering-deliveroo-service
+  - name: TouchBistro/touchbistro-node-shared
 actions:
   - type: replaceLine
     source: DB_USER=core
@@ -142,3 +151,11 @@ repos:
 ```
 
 This would create PRs with `develop` as the base branch.
+
+## Contributing
+
+See [contributing](CONTRIBUTING.md) for instructions on how to contribute to `cannon`. PRs welcome!
+
+## License
+
+MIT © TouchBistro, see [LICENSE](LICENSE) for details.
