@@ -1,84 +1,181 @@
 package action
 
-// TESTS WILL BE RE ADDED PROPERLY IN NEXT PR
+import (
+	"bytes"
+	"strings"
+	"testing"
 
-// var expandRepoVarTests = []struct {
-// 	source   string
-// 	repoName string
-// 	expected string
-// }{
-// 	{"container_name: $REPONAME_container", "node-boilerplate", "container_name: node-boilerplate_container"},
-// 	{"ENV NODE_ENV development", "loyalty-gateway-serivce", "ENV NODE_ENV development"},
-// }
+	"github.com/stretchr/testify/assert"
+)
 
-// func TestExpandRepoVar(t *testing.T) {
-// 	for _, testCase := range expandRepoVarTests {
-// 		result := expandRepoVar(testCase.source, testCase.repoName)
+const fixtures = "../fixtures"
+const textTests = fixtures + "/text_tests"
+const inputText = `# HYPE ZONE
+This file is ***hype***.
 
-// 		logPrefix := fmt.Sprintf("expandRepoVar(%s, %s):", testCase.source, testCase.repoName)
-// 		if result != testCase.expected {
-// 			t.Errorf("%s FAILED, expected %s but got %s", logPrefix, testCase.expected, result)
-// 		} else {
-// 			t.Logf("%s PASSED, expected %s and got %s", logPrefix, testCase.expected, result)
-// 		}
-// 	}
-// }
+## Hype Section
+This section is pretty hype.
+`
 
-// type textActionTest struct {
-// 	action     config.Action
-// 	repoName   string
-// 	fileData   []byte
-// 	outputData []byte
-// 	msg        string
-// 	err        error
-// }
+type MockWriter struct {
+	w *bytes.Buffer
+}
 
-// var replaceLineTests = []textActionTest{
-// 	{
-// 		config.Action{
-// 			Type:   "replaceLine",
-// 			Source: "NODE_ENV=test",
-// 			Target: "NODE_ENV=development",
-// 			Path:   ".env.example",
-// 		},
-// 		"node-boilerplate",
-// 		[]byte("# Sets env var\nNODE_ENV=development\nHTTP_PORT=8080\n"),
-// 		[]byte("# Sets env var\nNODE_ENV=test\nHTTP_PORT=8080\n"),
-// 		"Replaced line `NODE_ENV=development` with `NODE_ENV=test` in `.env.example`",
-// 		nil,
-// 	},
-// 	{
-// 		config.Action{
-// 			Type:   "replaceLine",
-// 			Source: "NODE_ENV=test",
-// 			Target: "NODE_ENV=development",
-// 			Path:   ".env.example",
-// 		},
-// 		"node-boilerplate",
-// 		[]byte("# Sets env var\nNODE_ENV=development\nHTTP_PORT=8080\n"),
-// 		[]byte("# Sets env var\nNODE_ENV=test\nHTTP_PORT=8080\n"),
-// 		"Replaced line `NODE_ENV=development` with `NODE_ENV=test` in `.env.example`",
-// 		nil,
-// 	},
-// }
+func mockFile(contents string) (*strings.Reader, *MockWriter) {
+	r := strings.NewReader(contents)
+	mw := &MockWriter{w: bytes.NewBufferString(contents)}
+	return r, mw
+}
 
-// func TestReplaceLine(t *testing.T) {
-// 	for _, testCase := range replaceLineTests {
-// 		outputData, msg, err := ReplaceLine(testCase.action, testCase.repoName, testCase.fileData)
+func (mw *MockWriter) WriteAt(b []byte, off int64) (n int, err error) {
+	mw.w.Truncate(int(off))
+	return mw.w.Write(b)
+}
 
-// 		logPrefix := fmt.Sprintf("ReplaceLine(%+v, %s):", testCase.action, testCase.repoName)
-// 		if !bytes.Equal(outputData, testCase.outputData) {
-// 			t.Errorf("%s FAILED, outputData bytes are not equal", logPrefix)
-// 		} else if msg != testCase.msg {
-// 			t.Errorf("%s FAILED, expected msg '%s' but got '%s'", logPrefix, testCase.msg, msg)
-// 		} else if err != testCase.err {
-// 			t.Errorf("%s FAILED, expected err %s but got %s", logPrefix, err, testCase.err)
-// 		} else {
-// 			t.Logf("%s PASSED, all return values equal, %v, %s, %v", logPrefix, outputData, msg, err)
-// 		}
-// 	}
-// }
+func (mw *MockWriter) String() string {
+	return mw.w.String()
+}
 
-// func TestDeleteLineError(t *testing.T) {
+func TestReplaceLine(t *testing.T) {
+	assert := assert.New(t)
+	action := Action{
+		Type:   ActionReplaceLine,
+		Source: "# WOKE ZONE",
+		Target: "# HYPE ZONE",
+		Path:   textTests + "/hype.md",
+	}
 
-// }
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+
+	assert.NotEmpty(msg)
+	assert.NoError(err)
+
+	assert.Equal(`# WOKE ZONE
+This file is ***hype***.
+
+## Hype Section
+This section is pretty hype.
+`, mw.String())
+}
+
+func TestDeleteLine(t *testing.T) {
+	assert := assert.New(t)
+	action := Action{
+		Type:   ActionDeleteLine,
+		Target: "## Hype Section",
+		Path:   textTests + "/hype.md",
+	}
+
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+
+	assert.NotEmpty(msg)
+	assert.NoError(err)
+
+	assert.Equal(`# HYPE ZONE
+This file is ***hype***.
+
+This section is pretty hype.
+`, mw.String())
+}
+
+func TestReplaceText(t *testing.T) {
+	assert := assert.New(t)
+	action := Action{
+		Type:   ActionReplaceText,
+		Source: "*****",
+		Target: "^#.+",
+		Path:   textTests + "/hype.md",
+	}
+
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+
+	assert.NotEmpty(msg)
+	assert.NoError(err)
+
+	assert.Equal(`*****
+This file is ***hype***.
+
+*****
+This section is pretty hype.
+`, mw.String())
+}
+
+func TestAppendText(t *testing.T) {
+	assert := assert.New(t)
+	action := Action{
+		Type:   ActionAppendText,
+		Source: " --- $REPONAME",
+		Target: "^#.+",
+		Path:   textTests + "/hype.md",
+	}
+
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+
+	assert.NotEmpty(msg)
+	assert.NoError(err)
+
+	assert.Equal(`# HYPE ZONE --- node-boilerplate
+This file is ***hype***.
+
+## Hype Section --- node-boilerplate
+This section is pretty hype.
+`, mw.String())
+}
+
+func TestDeleteText(t *testing.T) {
+	assert := assert.New(t)
+	action := Action{
+		Type:   ActionDeleteText,
+		Target: `\**hype\**`,
+		Path:   textTests + "/hype.md",
+	}
+
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+
+	assert.NotEmpty(msg)
+	assert.NoError(err)
+
+	assert.Equal(`# HYPE ZONE
+This file is .
+
+## Hype Section
+This section is pretty .
+`, mw.String())
+}
+
+func TestInvalidRegex(t *testing.T) {
+	assert := assert.New(t)
+	action := Action{
+		Type:   ActionReplaceText,
+		Source: "noop",
+		Target: "($*^",
+		Path:   textTests + "/hype.md",
+	}
+
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+
+	assert.Empty(msg)
+	assert.Error(err)
+}
+
+func TestInvalidTextAction(t *testing.T) {
+	assert := assert.New(t)
+	action := Action{
+		Type:   "ActionGarlicText",
+		Source: "noop",
+		Target: "noop",
+		Path:   textTests + "/hype.md",
+	}
+
+	r, mw := mockFile(inputText)
+	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+
+	assert.Empty(msg)
+	assert.Error(err)
+}

@@ -12,6 +12,7 @@ type OffsetWriter interface {
 	WriteAt(b []byte, off int64) (n int, err error)
 }
 
+// FileOrDirExists checks if the file or directory at a given path exists.
 func FileOrDirExists(path string) bool {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false
@@ -19,6 +20,7 @@ func FileOrDirExists(path string) bool {
 	return true
 }
 
+// ExecOutput executes a shell command and returns stdout as a string.
 func ExecOutput(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	stdout := &bytes.Buffer{}
@@ -30,6 +32,7 @@ func ExecOutput(name string, args ...string) (string, error) {
 	return stdout.String(), errors.Wrapf(err, "exec failed for command %s: %s", name, stderr.String())
 }
 
+// Exec executes a shell command and returns an error if it failed.
 func Exec(name, dir string, arg ...string) error {
 	cmd := exec.Command(name, arg...)
 	cmd.Dir = dir
