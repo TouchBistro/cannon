@@ -2,7 +2,6 @@ package action
 
 import (
 	"bytes"
-	"io"
 	"strings"
 	"testing"
 
@@ -22,7 +21,7 @@ type MockWriter struct {
 	w *bytes.Buffer
 }
 
-func mockFile(contents string) (io.Reader, *MockWriter) {
+func mockFile(contents string) (*strings.Reader, *MockWriter) {
 	r := strings.NewReader(contents)
 	mw := &MockWriter{w: bytes.NewBufferString(contents)}
 	return r, mw
