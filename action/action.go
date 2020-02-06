@@ -1,6 +1,7 @@
 package action
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"regexp"
@@ -22,6 +23,23 @@ const (
 	ActionCreateOrReplaceFile = "createOrReplaceFile"
 	ActionRunCommand          = "runCommand"
 )
+
+func (a Action) String() string {
+	switch a.Type {
+	case ActionReplaceLine, ActionReplaceText, ActionAppendText:
+		return fmt.Sprintf("- type: %s\n  source: %s\n  target: %s\n  path: %s", a.Type, a.Source, a.Target, a.Path)
+	case ActionDeleteLine, ActionDeleteText:
+		return fmt.Sprintf("- type: %s\n  target: %s\n  path: %s", a.Type, a.Target, a.Path)
+	case ActionCreateFile, ActionReplaceFile, ActionCreateOrReplaceFile:
+		return fmt.Sprintf("- type: %s\n  source: %s\n  path: %s", a.Type, a.Source, a.Path)
+	case ActionDeleteFile:
+		return fmt.Sprintf("- type: %s\n  path: %s", a.Type, a.Path)
+	case ActionRunCommand:
+		return fmt.Sprintf("- type: %s\n  run: %s", a.Type, a.Run)
+	default:
+		return fmt.Sprintf("Unsupported type: %s", a.Type)
+	}
+}
 
 type Action struct {
 	Type   string `yaml:"type"`
@@ -66,6 +84,7 @@ func ExecuteTextAction(action Action, r io.Reader, w util.OffsetWriter, repoName
 	}
 
 	var actionFn func(Action, *regexp.Regexp, []byte) ([]byte, string)
+
 	switch action.Type {
 	case ActionReplaceLine:
 		actionFn = replaceLine

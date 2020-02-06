@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,16 +32,13 @@ var (
 
 // Make sure repo is on master with latest changes
 func prepareRepo(repo config.Repo) (*git.Repository, error) {
-	parts := strings.Split(repo.Name, "/")
-	orgName := parts[0]
-	repoName := parts[1]
-	path := filepath.Join(config.CannonDir(), repoName)
+	path := filepath.Join(config.CannonDir(), repo.Name)
 
 	// Repo doesn't exist, clone and then we are good to go
 	if !util.FileOrDirExists(path) {
 		fmt.Printf("Repo %s does not exist, cloning...", repo.Name)
 
-		r, err := git.Clone(orgName, repoName, config.CannonDir())
+		r, err := git.Clone(repo.Name, config.CannonDir())
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to clone repo %s", repo.Name)
 		}
@@ -51,7 +47,7 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 		return r, nil
 	}
 
-	fmt.Printf("Repo %s exits, updating...\n", repo.Name)
+	fmt.Printf("Repo %s exists, updating...\n", repo.Name)
 	r, err := git.Open(path)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open repo %s", repo.Name)
@@ -88,19 +84,10 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 }
 
 func performActions(
-	r *git.Repository,
 	actions []action.Action,
-	branchName string,
 	repo config.Repo,
-) (string, error) {
-	err := git.CreateBranch(r, branchName, repo.Name)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to create new branch %s in repo %s", branchName, repo.Name)
-	}
-
-	// Execute actions
-	repoName := strings.Split(repo.Name, "/")[1]
-	path := filepath.Join(config.CannonDir(), repoName)
+) ([]string, error) {
+	path := filepath.Join(config.CannonDir(), repo.Name)
 	results := make([]string, len(actions))
 
 	for i, a := range actions {
@@ -109,18 +96,19 @@ func performActions(
 			filePath := filepath.Join(path, a.Path)
 			file, err := os.OpenFile(filePath, os.O_RDWR, os.ModePerm)
 			if err != nil {
-				return "", errors.Wrapf(err, "failed to open file %s", filePath)
+				return nil, errors.Wrapf(err, "failed to open file %s", filePath)
 			}
 			defer file.Close()
 
-			result, err = action.ExecuteTextAction(a, file, file, repoName)
+			result, err = action.ExecuteTextAction(a, file, file, repo.Name)
 			if err != nil {
-				return "", errors.Wrapf(err, "failed to execute text action %s in repo %s", a.Type, repo.Name)
+				return nil, errors.Wrapf(err, "failed to execute text action %s in repo %s", a.Type, repo.Name)
 			}
 		} else {
-			result, err = action.ExecuteFileAction(a, path, repoName)
+			var err error
+			result, err = action.ExecuteFileAction(a, path, repo.Name)
 			if err != nil {
-				return "", errors.Wrapf(err, "failed to execute file action %s in repo %s", a.Type, repo)
+				return nil, errors.Wrapf(err, "failed to execute file action %s in repo %s", a.Type, repo)
 			}
 		}
 
@@ -128,50 +116,10 @@ func performActions(
 		fmt.Printf("  - %s\n", result)
 	}
 
-	// Commit changes and push
-	err = git.Add(repoName, path, ".")
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to stage change files in repo %s", repo.Name)
-	}
-
-	err = git.Commit(r, commitMessage, repo.Name)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to commit changes in repo %s", repo.Name)
-	}
-
-	if noPush {
-		return "", nil
-	}
-
-	err = git.Push(r, repo.Name)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to push changes to remote for repo %s", repo.Name)
-	}
-
-	if noPR {
-		return git.CreatePRURL(repo.Name, branchName), nil
-	}
-
-	return git.CreatePR(repo.Name, repo.BaseBranch(), branchName, git.CreatePRDescription(results))
+	return results, nil
 }
 
-func parseFlags() {
-	flag.StringVarP(&configPath, "path", "p", "cannon.yml", "The path to a cannon.yml config file")
-	flag.StringVarP(&commitMessage, "commit-message", "m", "", "The commit message to use")
-	flag.BoolVar(&noPush, "no-push", false, "Prevents pushing to remote repo")
-	flag.BoolVar(&noPR, "no-pr", false, "Prevents creating a Pull Request in the remote repo")
-
-	flag.Parse()
-
-	if commitMessage == "" {
-		log.Fatalln("Must provide a commit message")
-	}
-}
-
-func main() {
-	parseFlags()
-
-	// Handle config setup
+func loadConfig() {
 	if !util.FileOrDirExists(configPath) {
 		fatal.Exitf("No such file %s", configPath)
 	}
@@ -186,11 +134,21 @@ func main() {
 	if err != nil {
 		fatal.ExitErr(err, "Failed reading config file.")
 	}
+}
 
+func promptForConfirmation() {
 	conf := config.Config()
+
 	fmt.Println("Affected repos:")
 	for _, repo := range conf.Repos {
 		fmt.Printf("- %s\n", repo.Name)
+	}
+
+	fmt.Println()
+
+	fmt.Println("Actions to perform:")
+	for _, action := range conf.Actions {
+		fmt.Printf("%s\n\n", action)
 	}
 
 	// Have user confirm changes
@@ -207,36 +165,111 @@ func main() {
 		fmt.Println("Aborting")
 		os.Exit(0)
 	}
+
+}
+
+func main() {
+	parseFlags()
+	loadConfig()
+
+	promptForConfirmation()
+
 	fmt.Println()
 
-	branchName := "cannon/change-" + uuid.NewV4().String()[0:8]
-	prURLs := make([]string, len(conf.Repos))
+	conf := config.Config()
+	newBranchName := "cannon/change-" + uuid.NewV4().String()[0:8]
 
-	// Make sure repos are up to date
-	for i, repo := range conf.Repos {
+	// Clone or update each repo
+	repositoryMap := make(map[string]*git.Repository)
+
+	for _, repo := range conf.Repos {
 		r, err := prepareRepo(repo)
+		if err != nil {
+			fatal.ExitErrf(err, "Failed to prepare repo %s", repo)
+		}
 
+		err = git.CreateBranch(r, newBranchName, repo.Name)
+		if err != nil {
+			fatal.ExitErrf(err, "Failed to create new branch %s in repo %s", newBranchName, repo.Name)
+		}
+
+		repositoryMap[repo.Name] = r
+	}
+
+	// Execute actions for each repo
+	resultsMap := make(map[string][]string)
+
+	for _, repo := range conf.Repos {
 		fmt.Printf("%sRunning actions for repo %s%s\n", cyanColor, repo.Name, resetColor)
+
+		results, err := performActions(conf.Actions, repo)
 		if err != nil {
-			fatal.ExitErrf(err, "Failed to prepare repo %s.", repo)
+			fatal.ExitErrf(err, "Failed to perform actions on repo %s", repo)
 		}
 
-		url, err := performActions(r, conf.Actions, branchName, repo)
-		if err != nil {
-			fatal.ExitErrf(err, "Failed to perform actions on repo %s.", repo)
-		}
-		prURLs[i] = url
+		resultsMap[repo.Name] = results
 
 		fmt.Printf("%sSuccessfully performed actions for repo %s%s\n\n", greenColor, repo.Name, resetColor)
 	}
 
-	// No point in printing anything PR related if we didn't push
+	// Commit changes to each repo
+	for _, repo := range conf.Repos {
+		r := repositoryMap[repo.Name]
+		path := filepath.Join(config.CannonDir(), repo.Name)
+
+		err := git.Add(repo.Name, path, ".")
+		if err != nil {
+			fatal.ExitErrf(err, "failed to stage change files in repo %s", repo.Name)
+		}
+
+		err = git.Commit(r, commitMessage, repo.Name)
+		if err != nil {
+			fatal.ExitErrf(err, "failed to commit changes in repo %s", repo.Name)
+		}
+	}
+
 	if noPush {
-		return
+		os.Exit(0)
+	}
+
+	// Push local changes to remote and create PRs
+	prURLs := make([]string, len(conf.Repos))
+
+	for i, repo := range conf.Repos {
+		r := repositoryMap[repo.Name]
+		actionResults := resultsMap[repo.Name]
+
+		// Push changes to remote
+		err := git.Push(r, repo.Name)
+		if err != nil {
+			fatal.ExitErrf(err, "failed to push changes to remote for repo %s", repo.Name)
+		}
+
+		// Create pull requests or genreate pull request urls
+		var url string
+		if noPR {
+			url = git.CreatePRURL(repo.Name, newBranchName)
+		} else {
+			description := git.CreatePRDescription(actionResults)
+			url, err = git.CreatePR(repo.Name, repo.BaseBranch(), newBranchName, description)
+			if err != nil {
+				fatal.ExitErrf(err, "failed to create PR for repo %s", repo.Name)
+			}
+		}
+		prURLs[i] = url
 	}
 
 	fmt.Println("Pull Request URLs:")
 	for i, repo := range conf.Repos {
 		fmt.Printf("- %s: %s\n", repo.Name, prURLs[i])
 	}
+}
+
+func parseFlags() {
+	flag.StringVarP(&configPath, "path", "p", "cannon.yml", "The path to a cannon.yml config file")
+	flag.StringVarP(&commitMessage, "commit-message", "m", "Apply commit-cannon changes", "The commit message to use")
+	flag.BoolVar(&noPush, "no-push", false, "Prevents pushing to remote repo")
+	flag.BoolVar(&noPR, "no-pr", false, "Prevents creating a Pull Request in the remote repo")
+
+	flag.Parse()
 }
