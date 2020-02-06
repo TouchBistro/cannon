@@ -16,16 +16,16 @@ import (
 
 type Repository = git.Repository
 
-func Clone(orgName, repoName, destDir string) (*git.Repository, error) {
-	repoURL := fmt.Sprintf("git@github.com:%s/%s.git", orgName, repoName)
-	destPath := filepath.Join(destDir, repoName)
+func Clone(name, destDir string) (*git.Repository, error) {
+	repoURL := fmt.Sprintf("git@github.com:%s.git", name)
+	destPath := filepath.Join(destDir, name)
 
 	r, err := git.PlainClone(destPath, false, &git.CloneOptions{
 		URL:      repoURL,
 		Progress: os.Stdout,
 	})
 
-	return r, errors.Wrapf(err, "failed to clone %s/%s to %s", orgName, repoName, destDir)
+	return r, errors.Wrapf(err, "failed to clone %s to %s", name, destDir)
 }
 
 func Open(path string) (*git.Repository, error) {
