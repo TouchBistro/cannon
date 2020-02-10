@@ -1,13 +1,15 @@
 package git
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/TouchBistro/cannon/util"
+	"github.com/TouchBistro/goutils/command"
 	"github.com/pkg/errors"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -98,23 +100,47 @@ func CreateBranch(r *git.Repository, branch, name string) error {
 }
 
 func Add(repoName, repoPath, addPath string) error {
-	err := util.Exec("git", repoPath, "add", addPath)
+	err := command.Exec("git", []string{"add", addPath}, "git-add", func(cmd *exec.Cmd) {
+		cmd.Dir = repoPath
+	})
 	return errors.Wrapf(err, "exec failed to add %s in repo %s", addPath, repoName)
+}
+
+func ExecOutput(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
+	err := cmd.Run()
+	return stdout.String(), errors.Wrapf(err, "exec failed for command %s: %s", name, stderr.String())
 }
 
 func User() (string, string, error) {
 	args := []string{"config", "--get", "--global"}
-	nameOutput, err := util.ExecOutput("git", append(args, "user.name")...)
+
+	nameBuf := &bytes.Buffer{}
+	nameErrBuf := &bytes.Buffer{}
+	err := command.Exec("git", append(args, "user.name"), "git-config", func(cmd *exec.Cmd) {
+		cmd.Stdout = nameBuf
+		cmd.Stderr = nameErrBuf
+	})
 	if err != nil {
-		return "", "", errors.Wrap(err, "failed to get git user name")
+		return "", "", errors.Wrapf(err, "failed to get git user name\n%s", nameErrBuf.String())
 	}
 
-	emailOutput, err := util.ExecOutput("git", append(args, "user.email")...)
+	emailBuf := &bytes.Buffer{}
+	emailErrBuf := &bytes.Buffer{}
+	err = command.Exec("git", append(args, "user.email"), "git-config", func(cmd *exec.Cmd) {
+		cmd.Stdout = emailBuf
+		cmd.Stderr = emailErrBuf
+	})
 	if err != nil {
-		return "", "", errors.Wrap(err, "failed to get git user email")
+		return "", "", errors.Wrapf(err, "failed to get git user email\n%s", emailErrBuf.String())
 	}
 
-	return strings.TrimSpace(nameOutput), strings.TrimSpace(emailOutput), nil
+	return strings.TrimSpace(nameBuf.String()), strings.TrimSpace(emailBuf.String()), nil
 }
 
 func Commit(r *git.Repository, msg, name string) error {

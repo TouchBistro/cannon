@@ -9,9 +9,9 @@ import (
 
 	"github.com/TouchBistro/cannon/action"
 	"github.com/TouchBistro/cannon/config"
-	"github.com/TouchBistro/cannon/fatal"
 	"github.com/TouchBistro/cannon/git"
-	"github.com/TouchBistro/cannon/util"
+	"github.com/TouchBistro/goutils/fatal"
+	"github.com/TouchBistro/goutils/file"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
 	flag "github.com/spf13/pflag"
@@ -35,7 +35,7 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 	path := filepath.Join(config.CannonDir(), repo.Name)
 
 	// Repo doesn't exist, clone and then we are good to go
-	if !util.FileOrDirExists(path) {
+	if !file.FileOrDirExists(path) {
 		fmt.Printf("Repo %s does not exist, cloning...", repo.Name)
 
 		r, err := git.Clone(repo.Name, config.CannonDir())
@@ -120,7 +120,7 @@ func performActions(
 }
 
 func loadConfig() {
-	if !util.FileOrDirExists(configPath) {
+	if !file.FileOrDirExists(configPath) {
 		fatal.Exitf("No such file %s", configPath)
 	}
 
