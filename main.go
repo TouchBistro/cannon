@@ -10,17 +10,13 @@ import (
 	"github.com/TouchBistro/cannon/action"
 	"github.com/TouchBistro/cannon/config"
 	"github.com/TouchBistro/cannon/git"
+	"github.com/TouchBistro/goutils/color"
 	"github.com/TouchBistro/goutils/fatal"
 	"github.com/TouchBistro/goutils/file"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
+	log "github.com/sirupsen/logrus"
 	flag "github.com/spf13/pflag"
-)
-
-const (
-	greenColor = "\x1b[32m"
-	cyanColor  = "\x1b[36m"
-	resetColor = "\x1b[0m"
 )
 
 var (
@@ -28,6 +24,7 @@ var (
 	commitMessage string
 	noPush        bool
 	noPR          bool
+	verbose       bool
 )
 
 // Make sure repo is on master with latest changes
@@ -36,18 +33,18 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 
 	// Repo doesn't exist, clone and then we are good to go
 	if !file.FileOrDirExists(path) {
-		fmt.Printf("Repo %s does not exist, cloning...", repo.Name)
+		log.Debugf("Repo %s does not exist, cloning...\n", repo.Name)
 
 		r, err := git.Clone(repo.Name, config.CannonDir())
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to clone repo %s", repo.Name)
 		}
 
-		fmt.Printf("Cloned repo %s to %s\n", repo.Name, config.CannonDir())
+		log.Debugf("Cloned repo %s to %s\n", repo.Name, config.CannonDir())
 		return r, nil
 	}
 
-	fmt.Printf("Repo %s exists, updating...\n", repo.Name)
+	log.Debugf("Repo %s exists, updating...\n", repo.Name)
 	r, err := git.Open(path)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open repo %s", repo.Name)
@@ -79,7 +76,7 @@ func prepareRepo(repo config.Repo) (*git.Repository, error) {
 	// Delete old branch
 	err = git.DeleteBranch(r, branchRef.Name().Short(), repo.Name)
 
-	fmt.Printf("Updated repo %s\n", repo.Name)
+	log.Debugf("Updated repo %s\n", repo.Name)
 	return r, errors.Wrapf(err, "failed to delete previous branch in repo %s", repo.Name)
 }
 
@@ -113,7 +110,6 @@ func performActions(
 		}
 
 		results[i] = result
-		fmt.Printf("  - %s\n", result)
 	}
 
 	return results, nil
@@ -170,6 +166,20 @@ func promptForConfirmation() {
 
 func main() {
 	parseFlags()
+
+	var logLevel log.Level
+	if verbose {
+		logLevel = log.DebugLevel
+	} else {
+		logLevel = log.InfoLevel
+		fatal.ShowStackTraces = false
+	}
+
+	log.SetLevel(logLevel)
+	log.SetFormatter(&log.TextFormatter{
+		DisableTimestamp: true,
+	})
+
 	loadConfig()
 
 	promptForConfirmation()
@@ -182,6 +192,7 @@ func main() {
 	// Clone or update each repo
 	repositoryMap := make(map[string]*git.Repository)
 
+	log.Info("☐ Preparing repos...")
 	for _, repo := range conf.Repos {
 		r, err := prepareRepo(repo)
 		if err != nil {
@@ -195,12 +206,14 @@ func main() {
 
 		repositoryMap[repo.Name] = r
 	}
+	log.Info("☑ Finished preparing repos")
 
 	// Execute actions for each repo
 	resultsMap := make(map[string][]string)
 
+	log.Info("☐ Running actions for repos...")
 	for _, repo := range conf.Repos {
-		fmt.Printf("%sRunning actions for repo %s%s\n", cyanColor, repo.Name, resetColor)
+		log.Infof(color.Cyan("Running actions for repo %s"), repo.Name)
 
 		results, err := performActions(conf.Actions, repo)
 		if err != nil {
@@ -209,10 +222,12 @@ func main() {
 
 		resultsMap[repo.Name] = results
 
-		fmt.Printf("%sSuccessfully performed actions for repo %s%s\n\n", greenColor, repo.Name, resetColor)
+		log.Infof(color.Green("Successfully performed actions for repo %s"), repo.Name)
 	}
+	log.Info("☑ Finished running actions for repos")
 
 	// Commit changes to each repo
+	log.Info("☐ Committing changes to repos...")
 	for _, repo := range conf.Repos {
 		r := repositoryMap[repo.Name]
 		path := filepath.Join(config.CannonDir(), repo.Name)
@@ -227,6 +242,7 @@ func main() {
 			fatal.ExitErrf(err, "failed to commit changes in repo %s", repo.Name)
 		}
 	}
+	log.Info("☑ Finished committing changes repos")
 
 	if noPush {
 		os.Exit(0)
@@ -235,11 +251,13 @@ func main() {
 	// Push local changes to remote and create PRs
 	prURLs := make([]string, len(conf.Repos))
 
+	log.Info("☐ Pushing changes to GitHub...")
 	for i, repo := range conf.Repos {
 		r := repositoryMap[repo.Name]
 		actionResults := resultsMap[repo.Name]
 
 		// Push changes to remote
+		log.Debugf("Pushing changes for repo %s\n", repo.Name)
 		err := git.Push(r, repo.Name)
 		if err != nil {
 			fatal.ExitErrf(err, "failed to push changes to remote for repo %s", repo.Name)
@@ -248,8 +266,10 @@ func main() {
 		// Create pull requests or genreate pull request urls
 		var url string
 		if noPR {
+			log.Debugf("Creating new PR URL for repo %s\n", repo.Name)
 			url = git.CreatePRURL(repo.Name, newBranchName)
 		} else {
+			log.Debugf("Creating PR for repo %s\n", repo.Name)
 			description := git.CreatePRDescription(actionResults)
 			url, err = git.CreatePR(repo.Name, repo.BaseBranch(), newBranchName, description)
 			if err != nil {
@@ -258,6 +278,7 @@ func main() {
 		}
 		prURLs[i] = url
 	}
+	log.Info("☑ Finished pushing changes to GitHub")
 
 	fmt.Println("Pull Request URLs:")
 	for i, repo := range conf.Repos {
@@ -270,6 +291,7 @@ func parseFlags() {
 	flag.StringVarP(&commitMessage, "commit-message", "m", "Apply commit-cannon changes", "The commit message to use")
 	flag.BoolVar(&noPush, "no-push", false, "Prevents pushing to remote repo")
 	flag.BoolVar(&noPR, "no-pr", false, "Prevents creating a Pull Request in the remote repo")
+	flag.BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 
 	flag.Parse()
 }
