@@ -106,17 +106,6 @@ func Add(repoName, repoPath, addPath string) error {
 	return errors.Wrapf(err, "exec failed to add %s in repo %s", addPath, repoName)
 }
 
-func ExecOutput(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-
-	err := cmd.Run()
-	return stdout.String(), errors.Wrapf(err, "exec failed for command %s: %s", name, stderr.String())
-}
-
 func User() (string, string, error) {
 	args := []string{"config", "--get", "--global"}
 

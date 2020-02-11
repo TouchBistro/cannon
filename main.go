@@ -116,6 +116,19 @@ func performActions(
 }
 
 func loadConfig() {
+	var logLevel log.Level
+	if verbose {
+		logLevel = log.DebugLevel
+	} else {
+		logLevel = log.InfoLevel
+		fatal.ShowStackTraces = false
+	}
+
+	log.SetLevel(logLevel)
+	log.SetFormatter(&log.TextFormatter{
+		DisableTimestamp: true,
+	})
+
 	if !file.FileOrDirExists(configPath) {
 		fatal.Exitf("No such file %s", configPath)
 	}
@@ -166,20 +179,6 @@ func promptForConfirmation() {
 
 func main() {
 	parseFlags()
-
-	var logLevel log.Level
-	if verbose {
-		logLevel = log.DebugLevel
-	} else {
-		logLevel = log.InfoLevel
-		fatal.ShowStackTraces = false
-	}
-
-	log.SetLevel(logLevel)
-	log.SetFormatter(&log.TextFormatter{
-		DisableTimestamp: true,
-	})
-
 	loadConfig()
 
 	promptForConfirmation()
@@ -257,7 +256,7 @@ func main() {
 		actionResults := resultsMap[repo.Name]
 
 		// Push changes to remote
-		log.Debugf("Pushing changes for repo %s\n", repo.Name)
+		log.Infof("Pushing changes for repo %s\n", repo.Name)
 		err := git.Push(r, repo.Name)
 		if err != nil {
 			fatal.ExitErrf(err, "failed to push changes to remote for repo %s", repo.Name)
