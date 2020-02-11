@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/TouchBistro/cannon/util"
+	"github.com/TouchBistro/goutils/file"
 	"github.com/pkg/errors"
 )
 
@@ -88,7 +88,7 @@ func createFile(action Action, repoPath, repoName string) (string, error) {
 	sourceFilePath := filepath.Join(cwd, action.Source)
 
 	filePath := filepath.Join(repoPath, action.Path)
-	if util.FileOrDirExists(filePath) {
+	if file.FileOrDirExists(filePath) {
 		return "", errors.Errorf("File at path %s already exists", filePath)
 	}
 
@@ -102,7 +102,7 @@ func createFile(action Action, repoPath, repoName string) (string, error) {
 
 func deleteFile(action Action, repoPath string) (string, error) {
 	filePath := filepath.Join(repoPath, action.Path)
-	if !util.FileOrDirExists(filePath) {
+	if !file.FileOrDirExists(filePath) {
 		return "", errors.Errorf("File at path %s does not exist", filePath)
 	}
 
@@ -122,7 +122,7 @@ func replaceFile(action Action, repoPath, repoName string) (string, error) {
 	sourceFilePath := filepath.Join(cwd, action.Source)
 
 	filePath := filepath.Join(repoPath, action.Path)
-	if !util.FileOrDirExists(filePath) {
+	if !file.FileOrDirExists(filePath) {
 		return "", errors.Errorf("File at path %s does not exist", filePath)
 	}
 

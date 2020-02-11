@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/TouchBistro/cannon/action"
-	"github.com/TouchBistro/cannon/util"
+	"github.com/TouchBistro/goutils/file"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 )
@@ -38,7 +38,7 @@ func Init(configReader io.Reader) error {
 	cannonDir = filepath.Join(os.Getenv("HOME"), ".cannon")
 
 	// Create ~/.cannon directory if it doesn't exist
-	if !util.FileOrDirExists(cannonDir) {
+	if !file.FileOrDirExists(cannonDir) {
 		err := os.Mkdir(cannonDir, 0755)
 		if err != nil {
 			return errors.Wrapf(err, "failed to create cannon directory at %s", cannonDir)
