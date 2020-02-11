@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/TouchBistro/cannon/action"
 	"github.com/TouchBistro/cannon/config"
@@ -13,6 +14,7 @@ import (
 	"github.com/TouchBistro/goutils/color"
 	"github.com/TouchBistro/goutils/fatal"
 	"github.com/TouchBistro/goutils/file"
+	"github.com/TouchBistro/goutils/spinner"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
@@ -188,59 +190,88 @@ func main() {
 	conf := config.Config()
 	newBranchName := "cannon/change-" + uuid.NewV4().String()[0:8]
 
+	lock := sync.Mutex{}
+	successCh := make(chan string)
+	failedCh := make(chan error)
+
 	// Clone or update each repo
 	repositoryMap := make(map[string]*git.Repository)
 
 	log.Info("☐ Preparing repos...")
-	for _, repo := range conf.Repos {
-		r, err := prepareRepo(repo)
-		if err != nil {
-			fatal.ExitErrf(err, "Failed to prepare repo %s", repo)
-		}
+	for _, r := range conf.Repos {
+		log.Infof("\t☐ Preparing repos %s", r.Name)
+		go func(repo config.Repo) {
+			r, err := prepareRepo(repo)
+			if err != nil {
+				failedCh <- err
+				return
+			}
 
-		err = git.CreateBranch(r, newBranchName, repo.Name)
-		if err != nil {
-			fatal.ExitErrf(err, "Failed to create new branch %s in repo %s", newBranchName, repo.Name)
-		}
+			err = git.CreateBranch(r, newBranchName, repo.Name)
+			if err != nil {
+				failedCh <- err
+				return
+			}
 
-		repositoryMap[repo.Name] = r
+			lock.Lock()
+			repositoryMap[repo.Name] = r
+			lock.Unlock()
+			successCh <- repo.Name
+		}(r)
 	}
+
+	successMsg := color.Green("\t☑ Finished preparing repo %s\n")
+	spinner.SpinnerWait(successCh, failedCh, successMsg, "failed preparing repo", len(conf.Repos))
 	log.Info("☑ Finished preparing repos")
 
 	// Execute actions for each repo
 	resultsMap := make(map[string][]string)
 
 	log.Info("☐ Running actions for repos...")
-	for _, repo := range conf.Repos {
-		log.Infof(color.Cyan("Running actions for repo %s"), repo.Name)
+	for _, r := range conf.Repos {
+		log.Infof(color.Cyan("\t☐ Running actions for repo %s"), r.Name)
+		go func(repo config.Repo) {
+			results, err := performActions(conf.Actions, repo)
+			if err != nil {
+				failedCh <- err
+			}
 
-		results, err := performActions(conf.Actions, repo)
-		if err != nil {
-			fatal.ExitErrf(err, "Failed to perform actions on repo %s", repo)
-		}
-
-		resultsMap[repo.Name] = results
-
-		log.Infof(color.Green("Successfully performed actions for repo %s"), repo.Name)
+			lock.Lock()
+			resultsMap[repo.Name] = results
+			lock.Unlock()
+			successCh <- repo.Name
+		}(r)
 	}
+
+	successMsg = color.Green("\t☑ Finished running actions for repo %s\n")
+	spinner.SpinnerWait(successCh, failedCh, successMsg, "failed to run actions for repo", len(conf.Repos))
 	log.Info("☑ Finished running actions for repos")
 
 	// Commit changes to each repo
 	log.Info("☐ Committing changes to repos...")
 	for _, repo := range conf.Repos {
-		r := repositoryMap[repo.Name]
+		log.Infof(color.Cyan("\t☐ Committing changes to repo %s"), repo.Name)
 		path := filepath.Join(config.CannonDir(), repo.Name)
 
-		err := git.Add(repo.Name, path, ".")
-		if err != nil {
-			fatal.ExitErrf(err, "failed to stage change files in repo %s", repo.Name)
-		}
+		go func(name string, r *git.Repository) {
+			err := git.Add(name, path, ".")
+			if err != nil {
+				failedCh <- err
+				return
+			}
 
-		err = git.Commit(r, commitMessage, repo.Name)
-		if err != nil {
-			fatal.ExitErrf(err, "failed to commit changes in repo %s", repo.Name)
-		}
+			err = git.Commit(r, commitMessage, name)
+			if err != nil {
+				failedCh <- err
+				return
+			}
+
+			successCh <- name
+		}(repo.Name, repositoryMap[repo.Name])
 	}
+
+	successMsg = color.Green("\t☑ Finished committing changes to repo %s\n")
+	spinner.SpinnerWait(successCh, failedCh, successMsg, "failed to commit changes to repo", len(conf.Repos))
 	log.Info("☑ Finished committing changes repos")
 
 	if noPush {
@@ -252,31 +283,43 @@ func main() {
 
 	log.Info("☐ Pushing changes to GitHub...")
 	for i, repo := range conf.Repos {
+		log.Infof("\t☐ Pushing changes for repo %s", repo.Name)
 		r := repositoryMap[repo.Name]
 		actionResults := resultsMap[repo.Name]
 
-		// Push changes to remote
-		log.Infof("Pushing changes for repo %s\n", repo.Name)
-		err := git.Push(r, repo.Name)
-		if err != nil {
-			fatal.ExitErrf(err, "failed to push changes to remote for repo %s", repo.Name)
-		}
-
-		// Create pull requests or genreate pull request urls
-		var url string
-		if noPR {
-			log.Debugf("Creating new PR URL for repo %s\n", repo.Name)
-			url = git.CreatePRURL(repo.Name, newBranchName)
-		} else {
-			log.Debugf("Creating PR for repo %s\n", repo.Name)
-			description := git.CreatePRDescription(actionResults)
-			url, err = git.CreatePR(repo.Name, repo.BaseBranch(), newBranchName, description)
+		go func(i int, repo config.Repo, r *git.Repository) {
+			// Push changes to remote
+			err := git.Push(r, repo.Name)
 			if err != nil {
-				fatal.ExitErrf(err, "failed to create PR for repo %s", repo.Name)
+				failedCh <- err
+				return
 			}
-		}
-		prURLs[i] = url
+
+			// Create pull requests or genreate pull request urls
+			var url string
+			if noPR {
+				log.Debugf("Creating new PR URL for repo %s\n", repo.Name)
+				url = git.CreatePRURL(repo.Name, newBranchName)
+			} else {
+				log.Debugf("Creating PR for repo %s\n", repo.Name)
+				description := git.CreatePRDescription(actionResults)
+				url, err = git.CreatePR(repo.Name, repo.BaseBranch(), newBranchName, description)
+				if err != nil {
+					failedCh <- err
+					return
+				}
+			}
+
+			lock.Lock()
+			prURLs[i] = url
+			lock.Unlock()
+
+			successCh <- repo.Name
+		}(i, repo, r)
 	}
+
+	successMsg = color.Green("\t☑ Finished pushing changes for repo %s\n")
+	spinner.SpinnerWait(successCh, failedCh, successMsg, "failed to push changes for repo", len(conf.Repos))
 	log.Info("☑ Finished pushing changes to GitHub")
 
 	fmt.Println("Pull Request URLs:")
