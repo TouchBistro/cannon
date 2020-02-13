@@ -102,7 +102,12 @@ func ExecuteTextAction(action Action, r io.Reader, w util.OffsetWriter, repoName
 
 	outputData, msg := actionFn(action, regex, fileData)
 
-	_, err = w.WriteAt([]byte(outputData), 0)
+	err = w.Truncate(0)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to truncate file %s", action.Path)
+	}
+
+	_, err = w.WriteAt(outputData, 0)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to write file %s", action.Path)
 	}
