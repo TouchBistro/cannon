@@ -27,8 +27,12 @@ func mockFile(contents string) (*strings.Reader, *MockWriter) {
 	return r, mw
 }
 
+func (mw *MockWriter) Truncate(size int64) error {
+	mw.w.Truncate(int(size))
+	return nil
+}
+
 func (mw *MockWriter) WriteAt(b []byte, off int64) (n int, err error) {
-	mw.w.Truncate(int(off))
 	return mw.w.Write(b)
 }
 

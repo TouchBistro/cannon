@@ -234,6 +234,7 @@ func main() {
 			results, err := performActions(conf.Actions, repo)
 			if err != nil {
 				failedCh <- err
+				return
 			}
 
 			lock.Lock()
