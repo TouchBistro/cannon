@@ -1,4 +1,4 @@
-# cannon
+# Commit Cannon
 
 cannon is a small CLI tool that lets you make changes to multiple git repos.
 
