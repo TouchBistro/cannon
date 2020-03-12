@@ -11,6 +11,8 @@ You could do it all by hand but this will get quite tedious especially with the 
 cannon makes it easy to perform a batch of changes on multiple git repos at once. It even creates GitHub PRs by default.
 All the heavy lifting is taken care of giving you time to do more important things.
 
+If you want to know more about why we did this and see a use case for it checkout out our [blog post](https://medium.com/touchbistro-development/commit-cannon-open-source-project-899ee75794c0).
+
 ## Setup Instructions
 
 1. Make sure you have go installed and set up.
