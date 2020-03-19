@@ -22,7 +22,12 @@ If you want to know more about why we did this and see a use case for it checkou
     ```
 3. Compile and install cannon globally:
     ```sh
-    go install cannon
+    go install
+    ```
+
+    **NOTE:** Make sure you have the following in your `~/.bash_profile` or `~/.zshrc` to ensure programs installed with `go install` are available globally:
+    ```sh
+    export PATH="$(go env GOPATH)/bin:$PATH"
     ```
 4. Create a GitHub Access Token
     - Create the token with the `repo` box checked in the list of permissions. Follow the instructions [here](https://help.github.com/en/articles/creating-a-personal-access-token-for-the-command-line) to learn more.
@@ -71,7 +76,7 @@ cannon supports the following actions:
     type: appendText
     source: <The text to append>
     target: <The text that will be appended to>
-    path: <The path to the file> 
+    path: <The path to the file>
     ```
 5. createFile - Create file at specified path if it doesn't already exist.
     ```yml
@@ -101,7 +106,7 @@ cannon supports the following actions:
     type: runCommand
     run: <The shell command to run>
     ```
-    You can also run shell (`sh`) commands by prefixing the command with `SHELL >>`.  
+    You can also run shell (`sh`) commands by prefixing the command with `SHELL >>`.
     Ex:
     ```yml
     type: runCommand
