@@ -11,12 +11,6 @@ import (
 	"github.com/TouchBistro/cannon/config"
 )
 
-func setup() {
-	tmp := os.TempDir()
-	os.RemoveAll(tmp + ".cannon")
-	os.Setenv("HOME", strings.TrimSuffix(tmp, "/"))
-}
-
 func TestRepoBranch(t *testing.T) {
 	tests := []struct {
 		name string
