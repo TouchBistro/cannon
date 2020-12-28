@@ -74,7 +74,7 @@ func Pull(r *git.Repository, name string) error {
 }
 
 func DeleteBranch(r *git.Repository, branch, name string) error {
-	err := r.Storer.RemoveReference(plumbing.NewBranchReferenceName(name))
+	err := r.Storer.RemoveReference(plumbing.NewBranchReferenceName(branch))
 	return errors.Wrapf(err, "failed to delete branch %s in repo %s", branch, name)
 }
 
