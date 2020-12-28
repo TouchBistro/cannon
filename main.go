@@ -118,15 +118,10 @@ func performActions(
 }
 
 func loadConfig() {
-	var logLevel log.Level
 	if verbose {
-		logLevel = log.DebugLevel
-	} else {
-		logLevel = log.InfoLevel
-		fatal.ShowStackTraces = false
+		log.SetLevel(log.DebugLevel)
+		fatal.ShowStackTraces(true)
 	}
-
-	log.SetLevel(logLevel)
 	log.SetFormatter(&log.TextFormatter{
 		DisableTimestamp: true,
 	})

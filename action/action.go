@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/TouchBistro/cannon/util"
 	"github.com/pkg/errors"
 )
 
@@ -23,6 +22,14 @@ const (
 	ActionCreateOrReplaceFile = "createOrReplaceFile"
 	ActionRunCommand          = "runCommand"
 )
+
+type Action struct {
+	Type   string `yaml:"type"`
+	Source string `yaml:"source"`
+	Target string `yaml:"target"`
+	Path   string `yaml:"path"`
+	Run    string `yaml:"run"`
+}
 
 func (a Action) String() string {
 	switch a.Type {
@@ -41,14 +48,6 @@ func (a Action) String() string {
 	}
 }
 
-type Action struct {
-	Type   string `yaml:"type"`
-	Source string `yaml:"source"`
-	Target string `yaml:"target"`
-	Path   string `yaml:"path"`
-	Run    string `yaml:"run"`
-}
-
 func (a Action) IsLineAction() bool {
 	return strings.HasSuffix(a.Type, "Line")
 }
@@ -57,19 +56,31 @@ func (a Action) IsTextAction() bool {
 	return strings.HasSuffix(a.Type, "Text")
 }
 
-func expandRepoVar(source, repoName string) string {
-	return strings.ReplaceAll(source, "$REPONAME", repoName)
+type TruncateWriterAt interface {
+	io.WriterAt
+	Truncate(size int64) error
 }
 
-func ExecuteTextAction(action Action, r io.Reader, w util.OffsetWriter, repoName string) (string, error) {
+func ExecuteTextAction(action Action, r io.Reader, w TruncateWriterAt, repoName string) (string, error) {
 	// Do lazy way for now, can optimize later if needed
 	fileData, err := ioutil.ReadAll(r)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to read file %s", action.Path)
 	}
 
-	action.Source = expandRepoVar(action.Source, repoName)
-	action.Target = expandRepoVar(action.Target, repoName)
+	parts := strings.Split(repoName, "/")
+	vars := map[string]string{
+		"REPO_OWNER": parts[0],
+		"REPO_NAME":  parts[1],
+	}
+	action.Source, err = expandVars(action.Source, vars)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to expand variables in action source")
+	}
+	action.Target, err = expandVars(action.Target, vars)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to expand variables in action target")
+	}
 
 	// Enable multi-line mode by adding flag if text action
 	// https://golang.org/pkg/regexp/syntax/
@@ -130,4 +141,35 @@ func ExecuteFileAction(action Action, repoPath, repoName string) (string, error)
 	default:
 		return "", errors.Errorf("invalid action type %s", action.Type)
 	}
+}
+
+func expandVars(str string, vars map[string]string) (string, error) {
+	// Regex to match variable substitution of the form ${VAR}
+	regex := regexp.MustCompile(`\$\{([\w-@:]+)\}`)
+	var result string
+
+	lastEndIndex := 0
+	for _, match := range regex.FindAllStringSubmatchIndex(str, -1) {
+		// match[0] is the start index of the whole match
+		startIndex := match[0]
+		// match[1] is the end index of the whole match (exclusive)
+		endIndex := match[1]
+		// match[2] is start index of group
+		startIndexGroup := match[2]
+		// match[3] is end index of group (exclusive)
+		endIndexGroup := match[3]
+
+		varName := str[startIndexGroup:endIndexGroup]
+		varValue, ok := vars[varName]
+		if !ok {
+			return "", fmt.Errorf("unknown variable %q", varName)
+		}
+
+		result += str[lastEndIndex:startIndex]
+		result += varValue
+		lastEndIndex = endIndex
+	}
+
+	result += str[lastEndIndex:]
+	return result, nil
 }

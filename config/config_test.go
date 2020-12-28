@@ -1,13 +1,14 @@
-package config
+package config_test
 
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/TouchBistro/cannon/action"
-	"github.com/stretchr/testify/assert"
+	"github.com/TouchBistro/cannon/config"
 )
 
 func setup() {
@@ -16,8 +17,42 @@ func setup() {
 	os.Setenv("HOME", strings.TrimSuffix(tmp, "/"))
 }
 
+func TestRepoBranch(t *testing.T) {
+	tests := []struct {
+		name string
+		repo config.Repo
+		want string
+	}{
+		{
+			"default base branch",
+			config.Repo{
+				Name: "TouchBistro/cannon",
+			},
+			"master",
+		},
+		{
+			"custom base branch",
+			config.Repo{
+				Name: "TouchBistro/example",
+				Base: "develop",
+			},
+			"develop",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.repo.BaseBranch()
+			if got != tt.want {
+				t.Errorf("got %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestInitConfig(t *testing.T) {
-	setup()
+	tmpdir := t.TempDir()
+	os.Setenv("HOME", tmpdir)
 
 	reader := strings.NewReader(`repos:
   - name: TouchBistro/cannon
@@ -32,39 +67,49 @@ actions:
     run: yarn
 `)
 
-	expectedConfig := CannonConfig{
-		Repos: []Repo{
-			Repo{
+	err := config.Init(reader)
+	if err != nil {
+		t.Errorf("want nil error, got %v", err)
+	}
+
+	wantDir := filepath.Join(tmpdir, ".cannon")
+	gotDir := config.CannonDir()
+	if gotDir != wantDir {
+		t.Errorf("got %s, want %s", gotDir, wantDir)
+	}
+	stat, err := os.Stat(gotDir)
+	if err != nil {
+		t.Fatalf("failed to stat %s: %v", gotDir, err)
+	}
+	if !stat.IsDir() {
+		t.Errorf("want %s to be a dir, got %s", gotDir, stat.Mode())
+	}
+
+	wantConfig := config.CannonConfig{
+		Repos: []config.Repo{
+			{
 				Name: "TouchBistro/cannon",
 			},
-			Repo{
+			{
 				Name: "TouchBistro/example",
 				Base: "develop",
 			},
 		},
 		Actions: []action.Action{
-			action.Action{
+			{
 				Type:   action.ActionReplaceLine,
 				Source: "DB_USER=core",
 				Target: "DB_USER=SA",
 				Path:   ".env.example",
 			},
-			action.Action{
+			{
 				Type: action.ActionRunCommand,
 				Run:  "yarn",
 			},
 		},
 	}
-	expectedCannonDir := filepath.Join(os.TempDir(), ".cannon")
-
-	err := Init(reader)
-
-	assert := assert.New(t)
-
-	assert.NoError(err)
-	assert.DirExists(filepath.Join(os.TempDir(), ".cannon"))
-	assert.Equal(expectedConfig, *Config())
-	assert.Equal(expectedCannonDir, CannonDir())
-	assert.Equal("master", Config().Repos[0].BaseBranch())
-	assert.Equal("develop", Config().Repos[1].BaseBranch())
+	gotConfig := *config.Config()
+	if !reflect.DeepEqual(gotConfig, wantConfig) {
+		t.Errorf("got %+v, want %+v", gotConfig, wantConfig)
+	}
 }

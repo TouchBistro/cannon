@@ -8,8 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const fixtures = "../fixtures"
-const textTests = fixtures + "/text_tests"
+const textTests = "testdata/text_tests"
 const inputText = `# HYPE ZONE
 This file is ***hype***.
 
@@ -50,7 +49,7 @@ func TestReplaceLine(t *testing.T) {
 	}
 
 	r, mw := mockFile(inputText)
-	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+	msg, err := ExecuteTextAction(action, r, mw, "TouchBistro/node-boilerplate")
 
 	assert.NotEmpty(msg)
 	assert.NoError(err)
@@ -72,7 +71,7 @@ func TestDeleteLine(t *testing.T) {
 	}
 
 	r, mw := mockFile(inputText)
-	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+	msg, err := ExecuteTextAction(action, r, mw, "TouchBistro/node-boilerplate")
 
 	assert.NotEmpty(msg)
 	assert.NoError(err)
@@ -94,7 +93,7 @@ func TestReplaceText(t *testing.T) {
 	}
 
 	r, mw := mockFile(inputText)
-	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+	msg, err := ExecuteTextAction(action, r, mw, "TouchBistro/node-boilerplate")
 
 	assert.NotEmpty(msg)
 	assert.NoError(err)
@@ -111,21 +110,21 @@ func TestAppendText(t *testing.T) {
 	assert := assert.New(t)
 	action := Action{
 		Type:   ActionAppendText,
-		Source: " --- $REPONAME",
+		Source: " --- ${REPO_OWNER} - ${REPO_NAME}",
 		Target: "^#.+",
 		Path:   textTests + "/hype.md",
 	}
 
 	r, mw := mockFile(inputText)
-	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+	msg, err := ExecuteTextAction(action, r, mw, "TouchBistro/node-boilerplate")
 
 	assert.NotEmpty(msg)
 	assert.NoError(err)
 
-	assert.Equal(`# HYPE ZONE --- node-boilerplate
+	assert.Equal(`# HYPE ZONE --- TouchBistro - node-boilerplate
 This file is ***hype***.
 
-## Hype Section --- node-boilerplate
+## Hype Section --- TouchBistro - node-boilerplate
 This section is pretty hype.
 `, mw.String())
 }
@@ -139,7 +138,7 @@ func TestDeleteText(t *testing.T) {
 	}
 
 	r, mw := mockFile(inputText)
-	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+	msg, err := ExecuteTextAction(action, r, mw, "TouchBistro/node-boilerplate")
 
 	assert.NotEmpty(msg)
 	assert.NoError(err)
@@ -162,7 +161,7 @@ func TestInvalidRegex(t *testing.T) {
 	}
 
 	r, mw := mockFile(inputText)
-	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+	msg, err := ExecuteTextAction(action, r, mw, "TouchBistro/node-boilerplate")
 
 	assert.Empty(msg)
 	assert.Error(err)
@@ -178,7 +177,7 @@ func TestInvalidTextAction(t *testing.T) {
 	}
 
 	r, mw := mockFile(inputText)
-	msg, err := ExecuteTextAction(action, r, mw, "node-boilerplate")
+	msg, err := ExecuteTextAction(action, r, mw, "TouchBistro/node-boilerplate")
 
 	assert.Empty(msg)
 	assert.Error(err)

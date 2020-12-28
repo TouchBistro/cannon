@@ -20,7 +20,16 @@ func copyFile(fromPath, toPath, repoName string) error {
 		return errors.Wrapf(err, "failed to read file %s", fromPath)
 	}
 
-	contents := expandRepoVar(string(data), repoName)
+	parts := strings.Split(repoName, "/")
+	vars := map[string]string{
+		"REPO_OWNER": parts[0],
+		"REPO_NAME":  parts[1],
+	}
+	contents, err := expandVars(string(data), vars)
+	if err != nil {
+		return errors.Wrap(err, "failed to expand variables file")
+	}
+
 	err = ioutil.WriteFile(toPath, []byte(contents), 0644)
 	return errors.Wrapf(err, "failed to write file %s", toPath)
 }

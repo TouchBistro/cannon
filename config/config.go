@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/TouchBistro/cannon/action"
-	"github.com/TouchBistro/goutils/file"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 )
@@ -20,7 +19,6 @@ func (repo Repo) BaseBranch() string {
 	if repo.Base == "" {
 		return "master"
 	}
-
 	return repo.Base
 }
 
@@ -34,19 +32,19 @@ var (
 	cannonDir string
 )
 
-func Init(configReader io.Reader) error {
-	cannonDir = filepath.Join(os.Getenv("HOME"), ".cannon")
+func Init(r io.Reader) error {
+	hd, err := os.UserHomeDir()
+	if err != nil {
+		return errors.Wrap(err, "failed to get user's home directory")
+	}
+	cannonDir = filepath.Join(hd, ".cannon")
 
 	// Create ~/.cannon directory if it doesn't exist
-	if !file.FileOrDirExists(cannonDir) {
-		err := os.Mkdir(cannonDir, 0755)
-		if err != nil {
-			return errors.Wrapf(err, "failed to create cannon directory at %s", cannonDir)
-		}
+	if err := os.MkdirAll(cannonDir, 0755); err != nil {
+		return errors.Wrapf(err, "failed to create cannon directory at %s", cannonDir)
 	}
 
-	dec := yaml.NewDecoder(configReader)
-	err := dec.Decode(&config)
+	err = yaml.NewDecoder(r).Decode(&config)
 	return errors.Wrap(err, "couldn't read yaml config file")
 }
 
