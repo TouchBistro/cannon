@@ -13,7 +13,7 @@ import (
 
 const (
 	apiURL   = "https://api.github.com"
-	tokenVar = "HOMEBREW_GITHUB_API_TOKEN"
+	tokenVar = "GITHUB_TOKEN"
 )
 
 func CreatePRURL(repo, branch string) string {
