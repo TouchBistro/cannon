@@ -14,7 +14,7 @@ require (
 	github.com/sergi/go-diff v1.2.0 // indirect
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.0 // indirect
 	golang.org/x/crypto v0.0.0-20210513164829-c07d793c2f9a // indirect
 	golang.org/x/net v0.0.0-20210510120150-4163338589ed // indirect
 	golang.org/x/sys v0.0.0-20210514084401-e8d321eab015 // indirect
