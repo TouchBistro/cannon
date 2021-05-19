@@ -49,12 +49,11 @@ func main() {
 		fatal.ShowStackTraces(true)
 	}
 
-	hd, err := os.UserHomeDir()
+	cacheDir, err := os.UserCacheDir()
 	if err != nil {
-		fatal.ExitErr(err, "failed to get user's home directory")
+		fatal.ExitErr(err, "failed to get user's cache directory")
 	}
-	cannonDir := filepath.Join(hd, ".cannon")
-	// Create ~/.cannon directory if it doesn't exist
+	cannonDir := filepath.Join(cacheDir, "cannon")
 	if err := os.MkdirAll(cannonDir, 0o755); err != nil {
 		fatal.ExitErrf(err, "failed to create cannon directory at %s", cannonDir)
 	}
