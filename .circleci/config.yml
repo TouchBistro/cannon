@@ -5,7 +5,7 @@ cache_key: &cache_key cannon-deps-20201228-{{ checksum "go.sum" }}
 jobs:
   lint-build:
     docker:
-      - image: cimg/go:1.15
+      - image: cimg/go:1.16
     steps:
       - checkout
       - restore_cache:

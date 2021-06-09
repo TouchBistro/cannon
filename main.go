@@ -6,19 +6,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/TouchBistro/cannon/action"
-	"github.com/TouchBistro/cannon/config"
 	"github.com/TouchBistro/cannon/git"
-	"github.com/TouchBistro/goutils/color"
 	"github.com/TouchBistro/goutils/fatal"
-	"github.com/TouchBistro/goutils/file"
 	"github.com/TouchBistro/goutils/spinner"
+	"github.com/mattn/go-isatty"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	flag "github.com/spf13/pflag"
+	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -29,138 +28,109 @@ var (
 	verbose       bool
 )
 
-// Make sure repo is on master with latest changes
-func prepareRepo(repo config.Repo) (*git.Repository, error) {
-	path := filepath.Join(config.CannonDir(), repo.Name)
+func main() {
+	flag.StringVarP(&configPath, "path", "p", "cannon.yml", "The path to a cannon.yml config file")
+	flag.StringVarP(&commitMessage, "commit-message", "m", "Apply commit-cannon changes", "The commit message to use")
+	flag.BoolVar(&noPush, "no-push", false, "Prevents pushing to remote repo")
+	flag.BoolVar(&noPR, "no-pr", false, "Prevents creating a Pull Request in the remote repo")
+	flag.BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
+	flag.Parse()
 
-	// Repo doesn't exist, clone and then we are good to go
-	if !file.FileOrDirExists(path) {
-		log.Debugf("Repo %s does not exist, cloning...\n", repo.Name)
-
-		r, err := git.Clone(repo.Name, config.CannonDir())
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to clone repo %s", repo.Name)
-		}
-
-		log.Debugf("Cloned repo %s to %s\n", repo.Name, config.CannonDir())
-		return r, nil
-	}
-
-	log.Debugf("Repo %s exists, updating...\n", repo.Name)
-	r, err := git.Open(path)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to open repo %s", repo.Name)
-	}
-
-	branchRef, err := r.Head()
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get HEAD for repo %s", repo.Name)
-	}
-
-	// Discard any changes and switch to base branch
-	baseBranch := repo.BaseBranch()
-	err = git.CleanAndCheckout(r, baseBranch, repo.Name)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to clean up repo %s", repo.Name)
-	}
-
-	// Pull latest changes
-	err = git.Pull(r, repo.Name)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to update %s branch for repo %s", baseBranch, repo.Name)
-	}
-
-	// Check if already on base branch
-	if branchRef.Name().Short() == baseBranch {
-		return r, nil
-	}
-
-	// Delete old branch
-	err = git.DeleteBranch(r, branchRef.Name().Short(), repo.Name)
-
-	log.Debugf("Updated repo %s\n", repo.Name)
-	return r, errors.Wrapf(err, "failed to delete previous branch in repo %s", repo.Name)
-}
-
-func performActions(
-	actions []action.Action,
-	repo config.Repo,
-) ([]string, error) {
-	path := filepath.Join(config.CannonDir(), repo.Name)
-	results := make([]string, len(actions))
-
-	for i, a := range actions {
-		var result string
-		if a.IsLineAction() || a.IsTextAction() {
-			filePath := filepath.Join(path, a.Path)
-			file, err := os.OpenFile(filePath, os.O_RDWR, os.ModePerm)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to open file %s", filePath)
-			}
-			defer file.Close()
-
-			result, err = action.ExecuteTextAction(a, file, file, repo.Name)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to execute text action %s in repo %s", a.Type, repo.Name)
-			}
-		} else {
-			var err error
-			result, err = action.ExecuteFileAction(a, path, repo.Name)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to execute file action %s in repo %s", a.Type, repo)
-			}
-		}
-
-		results[i] = result
-	}
-
-	return results, nil
-}
-
-func loadConfig() {
+	logger := logrus.New()
+	logger.SetFormatter(&logrus.TextFormatter{
+		DisableTimestamp: true,
+		// Need to force colours since the decision of whether or not to use colour
+		// is made lazily the first time a log is written, and Out may be changed
+		// to a spinner before then.
+		ForceColors: isatty.IsTerminal(os.Stderr.Fd()),
+	})
 	if verbose {
-		log.SetLevel(log.DebugLevel)
+		logger.SetLevel(logrus.DebugLevel)
 		fatal.ShowStackTraces(true)
 	}
-	log.SetFormatter(&log.TextFormatter{
-		DisableTimestamp: true,
-	})
 
-	if !file.FileOrDirExists(configPath) {
-		fatal.Exitf("No such file %s", configPath)
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		fatal.ExitErr(err, "failed to get user's cache directory")
+	}
+	cannonDir := filepath.Join(cacheDir, "cannon")
+	if err := os.MkdirAll(cannonDir, 0o755); err != nil {
+		fatal.ExitErrf(err, "failed to create cannon directory at %s", cannonDir)
 	}
 
-	file, err := os.Open(configPath)
+	conf := readConfig()
+	actions := make([]action.Action, len(conf.Actions))
+	for i, c := range conf.Actions {
+		a, err := action.Parse(c)
+		if err != nil {
+			fatal.ExitErrf(err, "failed to parse action config")
+		}
+		actions[i] = a
+	}
+	promptForConfirmation(conf.Repos, actions)
+
+	newBranch := "cannon/change-" + uuid.NewV4().String()[0:8]
+	repos := prepareRepos(conf.Repos, newBranch, cannonDir, logger)
+	msgs := performActions(repos, actions, logger)
+	commitChanges(repos, logger)
+	logger.Info("Changes applied")
+	if noPush {
+		os.Exit(0)
+	}
+
+	prURLs := pushChanges(repos, msgs, newBranch, logger)
+	fmt.Println("Pull Request URLs:")
+	for i, repo := range repos {
+		fmt.Printf("- %s: %s\n", repo.Name(), prURLs[i])
+	}
+}
+
+type config struct {
+	Repos   []repoConfig    `yaml:"repos"`
+	Actions []action.Config `yaml:"actions"`
+}
+
+type repoConfig struct {
+	Name string `yaml:"name"`
+	Base string `yaml:"base"`
+}
+
+func readConfig() config {
+	f, err := os.Open(configPath)
+	if errors.Is(err, os.ErrNotExist) {
+		fatal.Exitf("No such file %s", configPath)
+	}
 	if err != nil {
 		fatal.ExitErrf(err, "Failed to open config file %s", configPath)
 	}
-	defer file.Close()
+	defer f.Close()
 
-	err = config.Init(file)
+	var conf config
+	err = yaml.NewDecoder(f).Decode(&conf)
 	if err != nil {
 		fatal.ExitErr(err, "Failed reading config file.")
 	}
+	for i, rc := range conf.Repos {
+		if rc.Base == "" {
+			conf.Repos[i].Base = "master"
+		}
+	}
+	return conf
 }
 
-func promptForConfirmation() {
-	conf := config.Config()
-
+func promptForConfirmation(repos []repoConfig, actions []action.Action) {
 	fmt.Println("Affected repos:")
-	for _, repo := range conf.Repos {
+	for _, repo := range repos {
 		fmt.Printf("- %s\n", repo.Name)
 	}
-
-	fmt.Println()
-
-	fmt.Println("Actions to perform:")
-	for _, action := range conf.Actions {
-		fmt.Printf("%s\n\n", action)
+	fmt.Println("\nActions to perform:")
+	for _, a := range actions {
+		fmt.Printf("- %s\n\n", a)
 	}
 
 	// Have user confirm changes
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("\nConfirm running with these parameters (y/n): ")
-
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		fatal.ExitErr(err, "Failed to read user input.")
@@ -171,165 +141,215 @@ func promptForConfirmation() {
 		fmt.Println("Aborting")
 		os.Exit(0)
 	}
-
+	fmt.Println()
 }
 
-func main() {
-	parseFlags()
-	loadConfig()
+func prepareRepos(repoConfigs []repoConfig, newBranch, cannonDir string, logger *logrus.Logger) []*git.Repository {
+	s := spinner.New(
+		spinner.WithStartMessage("Preparing repos"),
+		spinner.WithCount(len(repoConfigs)),
+		spinner.WithPersistMessages(verbose),
+	)
+	out := logger.Out
+	logger.SetOutput(s)
+	defer logger.SetOutput(out)
+	s.Start()
 
-	promptForConfirmation()
-
-	fmt.Println()
-
-	conf := config.Config()
-	newBranchName := "cannon/change-" + uuid.NewV4().String()[0:8]
-
-	lock := sync.Mutex{}
-	successCh := make(chan string)
-	failedCh := make(chan error)
-
-	// Clone or update each repo
-	repositoryMap := make(map[string]*git.Repository)
-
-	log.Info("☐ Preparing repos...")
-	for _, r := range conf.Repos {
-		log.Infof("\t☐ Preparing repos %s", r.Name)
-		go func(repo config.Repo) {
-			r, err := prepareRepo(repo)
+	type repoResult struct {
+		repo *git.Repository
+		i    int
+		err  error
+	}
+	resultCh := make(chan repoResult)
+	for i, r := range repoConfigs {
+		logger.Debugf("Preparing repo %s", r.Name)
+		go func(i int, r repoConfig) {
+			repo, err := git.Prepare(r.Name, cannonDir, r.Base, logger)
 			if err != nil {
-				failedCh <- err
+				resultCh <- repoResult{err: err}
 				return
 			}
-
-			err = git.CreateBranch(r, newBranchName, repo.Name)
-			if err != nil {
-				failedCh <- err
+			if err := repo.CreateBranch(newBranch); err != nil {
+				resultCh <- repoResult{err: err}
 				return
 			}
-
-			lock.Lock()
-			repositoryMap[repo.Name] = r
-			lock.Unlock()
-			successCh <- repo.Name
-		}(r)
+			resultCh <- repoResult{repo: repo, i: i}
+		}(i, r)
 	}
 
-	successMsg := color.Green("\t☑ Finished preparing repo %s\n")
-	spinner.SpinnerWait(successCh, failedCh, successMsg, "failed preparing repo", len(conf.Repos))
-	log.Info("☑ Finished preparing repos")
-
-	// Execute actions for each repo
-	resultsMap := make(map[string][]string)
-
-	log.Info("☐ Running actions for repos...")
-	for _, r := range conf.Repos {
-		log.Infof(color.Cyan("\t☐ Running actions for repo %s"), r.Name)
-		go func(repo config.Repo) {
-			results, err := performActions(conf.Actions, repo)
-			if err != nil {
-				failedCh <- err
-				return
+	repos := make([]*git.Repository, len(repoConfigs))
+	for i := 0; i < len(repoConfigs); i++ {
+		select {
+		case res := <-resultCh:
+			if res.err != nil {
+				s.Stop()
+				fatal.ExitErr(res.err, "failed preparing repo")
 			}
-
-			lock.Lock()
-			resultsMap[repo.Name] = results
-			lock.Unlock()
-			successCh <- repo.Name
-		}(r)
+			repos[res.i] = res.repo
+			s.Inc()
+		case <-time.After(5 * time.Minute):
+			s.Stop()
+			fatal.Exit("Timed out while preparing repos")
+		}
 	}
+	s.Stop()
+	return repos
+}
 
-	successMsg = color.Green("\t☑ Finished running actions for repo %s\n")
-	spinner.SpinnerWait(successCh, failedCh, successMsg, "failed to run actions for repo", len(conf.Repos))
-	log.Info("☑ Finished running actions for repos")
+func performActions(repos []*git.Repository, actions []action.Action, logger *logrus.Logger) [][]string {
+	s := spinner.New(
+		spinner.WithStartMessage("Running actions on repos"),
+		spinner.WithCount(len(repos)),
+		spinner.WithPersistMessages(verbose),
+	)
+	out := logger.Out
+	logger.SetOutput(s)
+	defer logger.SetOutput(out)
+	s.Start()
 
-	// Commit changes to each repo
-	log.Info("☐ Committing changes to repos...")
-	for _, repo := range conf.Repos {
-		log.Infof(color.Cyan("\t☐ Committing changes to repo %s"), repo.Name)
-		path := filepath.Join(config.CannonDir(), repo.Name)
-
-		go func(name string, r *git.Repository) {
-			err := git.Add(name, path, ".")
-			if err != nil {
-				failedCh <- err
-				return
-			}
-
-			err = git.Commit(r, commitMessage, name)
-			if err != nil {
-				failedCh <- err
-				return
-			}
-
-			successCh <- name
-		}(repo.Name, repositoryMap[repo.Name])
+	type result struct {
+		i    int
+		msgs []string
+		err  error
 	}
-
-	successMsg = color.Green("\t☑ Finished committing changes to repo %s\n")
-	spinner.SpinnerWait(successCh, failedCh, successMsg, "failed to commit changes to repo", len(conf.Repos))
-	log.Info("☑ Finished committing changes repos")
-
-	if noPush {
-		os.Exit(0)
-	}
-
-	// Push local changes to remote and create PRs
-	prURLs := make([]string, len(conf.Repos))
-
-	log.Info("☐ Pushing changes to GitHub...")
-	for i, repo := range conf.Repos {
-		log.Infof("\t☐ Pushing changes for repo %s", repo.Name)
-		r := repositoryMap[repo.Name]
-		actionResults := resultsMap[repo.Name]
-
-		go func(i int, repo config.Repo, r *git.Repository) {
-			// Push changes to remote
-			err := git.Push(r, repo.Name)
-			if err != nil {
-				failedCh <- err
-				return
+	resultCh := make(chan result)
+	for i, repo := range repos {
+		logger.Debugf("Running actions on repo %s", repo.Name())
+		go func(i int, repo *git.Repository) {
+			res := result{i: i}
+			parts := strings.Split(repo.Name(), "/")
+			// Variables that will be shared across all actions
+			vars := map[string]string{
+				"REPO_OWNER": parts[0],
+				"REPO_NAME":  parts[1],
 			}
-
-			// Create pull requests or genreate pull request urls
-			var url string
-			if noPR {
-				log.Debugf("Creating new PR URL for repo %s\n", repo.Name)
-				url = git.CreatePRURL(repo.Name, newBranchName)
-			} else {
-				log.Debugf("Creating PR for repo %s\n", repo.Name)
-				description := git.CreatePRDescription(actionResults)
-				url, err = git.CreatePR(repo.Name, repo.BaseBranch(), newBranchName, description)
+			args := action.Arguments{Variables: vars}
+			for _, a := range actions {
+				msg, err := a.Run(repo, args)
 				if err != nil {
-					failedCh <- err
+					res.err = err
+					resultCh <- res
 					return
 				}
+				res.msgs = append(res.msgs, msg)
 			}
-
-			lock.Lock()
-			prURLs[i] = url
-			lock.Unlock()
-
-			successCh <- repo.Name
-		}(i, repo, r)
+			resultCh <- res
+		}(i, repo)
 	}
 
-	successMsg = color.Green("\t☑ Finished pushing changes for repo %s\n")
-	spinner.SpinnerWait(successCh, failedCh, successMsg, "failed to push changes for repo", len(conf.Repos))
-	log.Info("☑ Finished pushing changes to GitHub")
-
-	fmt.Println("Pull Request URLs:")
-	for i, repo := range conf.Repos {
-		fmt.Printf("- %s: %s\n", repo.Name, prURLs[i])
+	msgs := make([][]string, len(repos))
+	for i := 0; i < len(repos); i++ {
+		select {
+		case res := <-resultCh:
+			if res.err != nil {
+				s.Stop()
+				fatal.ExitErr(res.err, "failed running actions on repo")
+			}
+			msgs[res.i] = res.msgs
+			s.Inc()
+		case <-time.After(5 * time.Minute):
+			s.Stop()
+			fatal.Exit("Timed out while running actions")
+		}
 	}
+	s.Stop()
+	return msgs
 }
 
-func parseFlags() {
-	flag.StringVarP(&configPath, "path", "p", "cannon.yml", "The path to a cannon.yml config file")
-	flag.StringVarP(&commitMessage, "commit-message", "m", "Apply commit-cannon changes", "The commit message to use")
-	flag.BoolVar(&noPush, "no-push", false, "Prevents pushing to remote repo")
-	flag.BoolVar(&noPR, "no-pr", false, "Prevents creating a Pull Request in the remote repo")
-	flag.BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
+func commitChanges(repos []*git.Repository, logger *logrus.Logger) {
+	s := spinner.New(
+		spinner.WithStartMessage("Committing changes to repos"),
+		spinner.WithCount(len(repos)),
+		spinner.WithPersistMessages(verbose),
+	)
+	out := logger.Out
+	logger.SetOutput(s)
+	defer logger.SetOutput(out)
+	s.Start()
 
-	flag.Parse()
+	resultCh := make(chan error)
+	for _, repo := range repos {
+		logger.Debugf("Committing changes to repo %s", repo.Name())
+		go func(repo *git.Repository) {
+			resultCh <- repo.CommitChanges(commitMessage)
+		}(repo)
+	}
+	for i := 0; i < len(repos); i++ {
+		select {
+		case err := <-resultCh:
+			if err != nil {
+				s.Stop()
+				fatal.ExitErr(err, "failed to commit changes to repo")
+			}
+			s.Inc()
+		case <-time.After(5 * time.Minute):
+			s.Stop()
+			fatal.Exit("Timed out while committing changes")
+		}
+	}
+	s.Stop()
+}
+
+func pushChanges(repos []*git.Repository, msgs [][]string, newBranch string, logger *logrus.Logger) []string {
+	s := spinner.New(
+		spinner.WithStartMessage("Pushing changes to GitHub"),
+		spinner.WithCount(len(repos)),
+		spinner.WithPersistMessages(verbose),
+	)
+	out := logger.Out
+	logger.SetOutput(s)
+	defer logger.SetOutput(out)
+	s.Start()
+
+	type result struct {
+		i   int
+		url string
+		err error
+	}
+	resultCh := make(chan result)
+	for i, repo := range repos {
+		logger.Debugf("Pushing changes for repo %s", repo.Name())
+		go func(i int, repo *git.Repository) {
+			res := result{i: i}
+			if err := repo.Push(); err != nil {
+				res.err = err
+				resultCh <- res
+				return
+			}
+			if noPR {
+				res.url = git.CreatePRURL(repo.Name(), newBranch)
+				resultCh <- res
+				return
+			}
+
+			logger.Debugf("Creating PR for repo %s", repo.Name())
+			var desc strings.Builder
+			desc.WriteString("Changes applied by commit-cannon:\n")
+			for _, m := range msgs[i] {
+				desc.WriteString("  * ")
+				desc.WriteString(m)
+				desc.WriteByte('\n')
+			}
+			res.url, res.err = repo.CreatePR(newBranch, desc.String())
+			resultCh <- res
+		}(i, repo)
+	}
+
+	urls := make([]string, len(repos))
+	for i := 0; i < len(repos); i++ {
+		select {
+		case res := <-resultCh:
+			if res.err != nil {
+				s.Stop()
+				fatal.ExitErr(res.err, "failed to push changes for repo")
+			}
+			urls[res.i] = res.url
+			s.Inc()
+		case <-time.After(5 * time.Minute):
+			s.Stop()
+			fatal.Exit("Timed out while pushing changes")
+		}
+	}
+	s.Stop()
+	return urls
 }
