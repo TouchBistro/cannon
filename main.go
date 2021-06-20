@@ -21,19 +21,17 @@ import (
 )
 
 var (
-	configPath    string
-	commitMessage string
-	noPush        bool
-	noPR          bool
-	verbose       bool
+	noPR    bool
+	verbose bool
 )
 
 func main() {
-	flag.StringVarP(&configPath, "path", "p", "cannon.yml", "The path to a cannon.yml config file")
-	flag.StringVarP(&commitMessage, "commit-message", "m", "Apply commit-cannon changes", "The commit message to use")
-	flag.BoolVar(&noPush, "no-push", false, "Prevents pushing to remote repo")
+	configPath := flag.StringP("path", "p", "cannon.yml", "The path to a cannon.yml config file")
+	commitMsg := flag.StringP("commit-message", "m", "Apply commit-cannon changes", "The commit message to use")
+	noPush := flag.Bool("no-push", false, "Prevents pushing to remote repo")
 	flag.BoolVar(&noPR, "no-pr", false, "Prevents creating a Pull Request in the remote repo")
 	flag.BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
+	clean := flag.Bool("clean", false, "Clean cannon cache directory")
 	flag.Parse()
 
 	logger := logrus.New()
@@ -54,11 +52,16 @@ func main() {
 		fatal.ExitErr(err, "failed to get user's cache directory")
 	}
 	cannonDir := filepath.Join(cacheDir, "cannon")
+	if *clean {
+		if err := os.RemoveAll(cannonDir); err != nil {
+			fatal.ExitErrf(err, "failed to clean cannon directory at %s", cannonDir)
+		}
+	}
 	if err := os.MkdirAll(cannonDir, 0o755); err != nil {
 		fatal.ExitErrf(err, "failed to create cannon directory at %s", cannonDir)
 	}
 
-	conf := readConfig()
+	conf := readConfig(*configPath)
 	actions := make([]action.Action, len(conf.Actions))
 	for i, c := range conf.Actions {
 		a, err := action.Parse(c)
@@ -72,9 +75,9 @@ func main() {
 	newBranch := "cannon/change-" + uuid.NewV4().String()[0:8]
 	repos := prepareRepos(conf.Repos, newBranch, cannonDir, logger)
 	msgs := performActions(repos, actions, logger)
-	commitChanges(repos, logger)
+	commitChanges(repos, *commitMsg, logger)
 	logger.Info("Changes applied")
-	if noPush {
+	if *noPush {
 		os.Exit(0)
 	}
 
@@ -95,7 +98,7 @@ type repoConfig struct {
 	Base string `yaml:"base"`
 }
 
-func readConfig() config {
+func readConfig(configPath string) config {
 	f, err := os.Open(configPath)
 	if errors.Is(err, os.ErrNotExist) {
 		fatal.Exitf("No such file %s", configPath)
@@ -256,7 +259,7 @@ func performActions(repos []*git.Repository, actions []action.Action, logger *lo
 	return msgs
 }
 
-func commitChanges(repos []*git.Repository, logger *logrus.Logger) {
+func commitChanges(repos []*git.Repository, commitMsg string, logger *logrus.Logger) {
 	s := spinner.New(
 		spinner.WithStartMessage("Committing changes to repos"),
 		spinner.WithCount(len(repos)),
@@ -271,7 +274,7 @@ func commitChanges(repos []*git.Repository, logger *logrus.Logger) {
 	for _, repo := range repos {
 		logger.Debugf("Committing changes to repo %s", repo.Name())
 		go func(repo *git.Repository) {
-			resultCh <- repo.CommitChanges(commitMessage)
+			resultCh <- repo.CommitChanges(commitMsg)
 		}(repo)
 	}
 	for i := 0; i < len(repos); i++ {
