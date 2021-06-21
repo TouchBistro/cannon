@@ -64,27 +64,15 @@ type Config struct {
 
 // Parse parses a config that describes an action and returns an Action.
 func Parse(cfg Config) (Action, error) {
-	if strings.HasSuffix(cfg.Type, "Text") || strings.HasSuffix(cfg.Type, "Line") {
+	switch {
+	case strings.HasSuffix(cfg.Type, "Text") || strings.HasSuffix(cfg.Type, "Line"):
 		return parseTextAction(cfg)
-	}
-	switch cfg.Type {
-	case fileCreate, fileReplace, fileCreateOrReplace, fileDelete:
-		if cfg.DstPath == "" {
-			return nil, errors.New("missing destination path for file action")
+	case strings.HasSuffix(cfg.Type, "File"):
+		return parseFileAction(cfg)
+	case cfg.Type == "runCommand":
+		if cfg.Run == "" {
+			return nil, errors.New("missing run field for command action")
 		}
-		if cfg.Type == fileDelete {
-			return fileAction{typ: cfg.Type, dst: cfg.DstPath}, nil
-		}
-		if cfg.SrcPath == "" {
-			return nil, errors.New("missing source path for file action")
-		}
-		// Read and cache source file so we can reuse it for all targets
-		data, err := os.ReadFile(cfg.SrcPath)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to read file %s", cfg.SrcPath)
-		}
-		return fileAction{typ: cfg.Type, src: cfg.SrcPath, dst: cfg.DstPath, data: data}, nil
-	case "runCommand":
 		const shellPrefix = "SHELL >> "
 		var args []string
 		if strings.HasPrefix(cfg.Run, shellPrefix) {
@@ -137,6 +125,39 @@ func parseTextAction(cfg Config) (Action, error) {
 	}
 
 	a.applyText = []byte(cfg.ApplyText)
+	return a, nil
+}
+
+func parseFileAction(cfg Config) (Action, error) {
+	if cfg.DstPath == "" {
+		return nil, errors.New("missing destination path for file action")
+	}
+
+	a := fileAction{dst: cfg.DstPath}
+	switch cfg.Type {
+	case "createFile":
+		a.typ = fileCreate
+	case "replaceFile":
+		a.typ = fileReplace
+	case "createOrReplaceFile":
+		a.typ = fileCreateOrReplace
+	case "deleteFile":
+		a.typ = fileDelete
+		return a, nil
+	default:
+		return nil, errors.Errorf("unsupported file action type %s", cfg.Type)
+	}
+	if cfg.SrcPath == "" {
+		return nil, errors.New("missing source path for file action")
+	}
+
+	// Read and cache source file so we can reuse it for all targets
+	data, err := os.ReadFile(cfg.SrcPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to read file %s", cfg.SrcPath)
+	}
+	a.src = cfg.SrcPath
+	a.data = data
 	return a, nil
 }
 
@@ -256,16 +277,18 @@ func (a textAction) String() string {
 	}
 }
 
+type fileActionType int
+
 const (
-	fileCreate          = "createFile"
-	fileReplace         = "replaceFile"
-	fileCreateOrReplace = "createOrReplaceFile"
-	fileDelete          = "deleteFile"
+	fileCreate fileActionType = iota
+	fileReplace
+	fileCreateOrReplace
+	fileDelete
 )
 
 // fileAction is an action that operates on files.
 type fileAction struct {
-	typ  string
+	typ  fileActionType
 	src  string
 	dst  string // path in the target
 	data []byte // src data; cached so it can be reused each run
@@ -307,12 +330,16 @@ func (a fileAction) Run(t Target, args Arguments) (string, error) {
 
 func (a fileAction) String() string {
 	switch a.typ {
-	case fileCreate, fileReplace, fileCreateOrReplace:
-		return fmt.Sprintf("%s: %q, source: %q", a.typ, a.dst, a.src)
+	case fileCreate:
+		return fmt.Sprintf("create file: %q\n  from: %q", a.dst, a.src)
+	case fileReplace:
+		return fmt.Sprintf("replace file: %q\n  with: %q", a.dst, a.src)
+	case fileCreateOrReplace:
+		return fmt.Sprintf("create or replace file: %q\n  with: %q", a.dst, a.src)
 	case fileDelete:
-		return fmt.Sprintf("%s: %q", a.typ, a.dst)
+		return fmt.Sprintf("delete file: %q", a.dst)
 	default:
-		panic("impossible: invalid type: " + a.typ)
+		panic("impossible: invalid type")
 	}
 }
 
