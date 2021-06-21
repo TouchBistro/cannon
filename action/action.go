@@ -69,26 +69,8 @@ func Parse(cfg Config) (Action, error) {
 		return parseTextAction(cfg)
 	case strings.HasSuffix(cfg.Type, "File"):
 		return parseFileAction(cfg)
-	case cfg.Type == "runCommand":
-		if cfg.Run == "" {
-			return nil, errors.New("missing run field for command action")
-		}
-		const shellPrefix = "SHELL >> "
-		var args []string
-		if strings.HasPrefix(cfg.Run, shellPrefix) {
-			shellCmd := strings.TrimPrefix(cfg.Run, shellPrefix)
-			shellCmd = strings.TrimSpace(shellCmd)
-			if shellCmd == "" {
-				return nil, errors.New("missing shell command")
-			}
-			args = []string{"sh", "-c", shellCmd}
-		} else {
-			args = strings.Fields(cfg.Run)
-			if len(args) == 0 {
-				return nil, errors.New("missing args for run command")
-			}
-		}
-		return commandAction{args: args, str: cfg.Run}, nil
+	case strings.HasSuffix(cfg.Type, "Command"):
+		return parseCommandAction(cfg)
 	default:
 		return nil, errors.Errorf("unsupported action type %s", cfg.Type)
 	}
@@ -159,6 +141,23 @@ func parseFileAction(cfg Config) (Action, error) {
 	a.src = cfg.SrcPath
 	a.data = data
 	return a, nil
+}
+
+func parseCommandAction(cfg Config) (Action, error) {
+	if cfg.Run == "" {
+		return nil, errors.New("missing run field for command action")
+	}
+
+	var args []string
+	switch cfg.Type {
+	case "runCommand":
+		args = strings.Fields(cfg.Run)
+	case "shellCommand":
+		args = []string{"sh", "-c", cfg.Run}
+	default:
+		return nil, errors.Errorf("unsupported command action type %s", cfg.Type)
+	}
+	return commandAction{args: args, str: cfg.Run}, nil
 }
 
 type textActionType int
