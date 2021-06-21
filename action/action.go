@@ -38,14 +38,28 @@ type Arguments struct {
 	Variables map[string]string
 }
 
-// TODO(@cszatmary): The current config is super confusing. Try to make it better.
-
+// Config is used to configure an action.
+// It is passed to Parse to create an Action instance.
 type Config struct {
-	Type   string `yaml:"type"`
-	Source string `yaml:"source"`
-	Target string `yaml:"target"`
-	Path   string `yaml:"path"`
-	Run    string `yaml:"run"`
+	// Identifies the type of action. Required for all actions.
+	Type string `yaml:"type"`
+
+	// The text to search for in a text action.
+	SearchText string `yaml:"searchText"`
+	// The text to apply in a text action.
+	ApplyText string `yaml:"applyText"`
+	// The path to the file in a text file.
+	// Must be relative to the target root.
+	Path string `yaml:"path"`
+
+	// The source file to use in a file action.
+	SrcPath string `yaml:"srcPath"`
+	// The destination file to use in a file action.
+	// Must be relative to the target root.
+	DstPath string `yaml:"dstPath"`
+
+	// The command to run in a command action.
+	Run string `yaml:"run"`
 }
 
 // Parse parses a config that describes an action and returns an Action.
@@ -55,21 +69,21 @@ func Parse(cfg Config) (Action, error) {
 	}
 	switch cfg.Type {
 	case fileCreate, fileReplace, fileCreateOrReplace, fileDelete:
-		if cfg.Path == "" {
-			return nil, errors.New("missing path for file action")
+		if cfg.DstPath == "" {
+			return nil, errors.New("missing destination path for file action")
 		}
 		if cfg.Type == fileDelete {
-			return fileAction{typ: cfg.Type, dst: cfg.Path}, nil
+			return fileAction{typ: cfg.Type, dst: cfg.DstPath}, nil
 		}
-		if cfg.Source == "" {
-			return nil, errors.New("missing source for file action")
+		if cfg.SrcPath == "" {
+			return nil, errors.New("missing source path for file action")
 		}
 		// Read and cache source file so we can reuse it for all targets
-		data, err := os.ReadFile(cfg.Source)
+		data, err := os.ReadFile(cfg.SrcPath)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to read file %s", cfg.Source)
+			return nil, errors.Wrapf(err, "failed to read file %s", cfg.SrcPath)
 		}
-		return fileAction{typ: cfg.Type, src: cfg.Source, dst: cfg.Path, data: data}, nil
+		return fileAction{typ: cfg.Type, src: cfg.SrcPath, dst: cfg.DstPath, data: data}, nil
 	case "runCommand":
 		const shellPrefix = "SHELL >> "
 		var args []string
@@ -97,11 +111,11 @@ func parseTextAction(cfg Config) (Action, error) {
 	if cfg.Path == "" {
 		return nil, errors.New("missing path for text action")
 	}
-	if cfg.Target == "" {
-		return nil, errors.New("missing target for text action")
+	if cfg.SearchText == "" {
+		return nil, errors.New("missing search text for text action")
 	}
 
-	a := textAction{searchText: []byte(cfg.Target), path: cfg.Path}
+	a := textAction{searchText: []byte(cfg.SearchText), path: cfg.Path}
 	switch cfg.Type {
 	case "replaceLine":
 		a.typ = textReplaceLine
@@ -118,11 +132,11 @@ func parseTextAction(cfg Config) (Action, error) {
 	default:
 		return nil, errors.Errorf("unsupported text action type %s", cfg.Type)
 	}
-	if cfg.Source == "" {
-		return nil, errors.New("missing source for text action")
+	if cfg.ApplyText == "" {
+		return nil, errors.New("missing apply text for text action")
 	}
 
-	a.applyText = []byte(cfg.Source)
+	a.applyText = []byte(cfg.ApplyText)
 	return a, nil
 }
 

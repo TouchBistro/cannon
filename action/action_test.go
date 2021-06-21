@@ -35,10 +35,10 @@ func TestTextAction(t *testing.T) {
 			name: "replace line",
 			in:   inputText,
 			cfg: action.Config{
-				Type:   "replaceLine",
-				Source: "# WOKE ZONE",
-				Target: "# HYPE ZONE",
-				Path:   "replace_line.md",
+				Type:       "replaceLine",
+				ApplyText:  "# WOKE ZONE",
+				SearchText: "# HYPE ZONE",
+				Path:       "replace_line.md",
 			},
 			wantMsg: "Replaced line `# HYPE ZONE` with `# WOKE ZONE` in `replace_line.md`",
 			out: `# WOKE ZONE
@@ -52,9 +52,9 @@ This section is pretty hype.
 			name: "delete line",
 			in:   inputText,
 			cfg: action.Config{
-				Type:   "deleteLine",
-				Target: "## Hype Section",
-				Path:   "delete_line.md",
+				Type:       "deleteLine",
+				SearchText: "## Hype Section",
+				Path:       "delete_line.md",
 			},
 			wantMsg: "Deleted line `## Hype Section` in `delete_line.md`",
 			out: `# HYPE ZONE
@@ -67,10 +67,10 @@ This section is pretty hype.
 			name: "replace text",
 			in:   inputText,
 			cfg: action.Config{
-				Type:   "replaceText",
-				Source: "*****",
-				Target: "^#.+",
-				Path:   "replace_text.md",
+				Type:       "replaceText",
+				ApplyText:  "*****",
+				SearchText: "^#.+",
+				Path:       "replace_text.md",
 			},
 			wantMsg: "Replaced text `^#.+` with `*****` in `replace_text.md`",
 			out: `*****
@@ -84,10 +84,10 @@ This section is pretty hype.
 			name: "append text",
 			in:   inputText,
 			cfg: action.Config{
-				Type:   "appendText",
-				Source: " --- ${REPO_OWNER} - ${REPO_NAME}",
-				Target: "^#.+",
-				Path:   "append_text.md",
+				Type:       "appendText",
+				ApplyText:  " --- ${REPO_OWNER} - ${REPO_NAME}",
+				SearchText: "^#.+",
+				Path:       "append_text.md",
 			},
 			vars: map[string]string{
 				"REPO_OWNER": "TouchBistro",
@@ -105,9 +105,9 @@ This section is pretty hype.
 			name: "delete text",
 			in:   inputText,
 			cfg: action.Config{
-				Type:   "deleteText",
-				Target: `\**hype\**`,
-				Path:   "delete_text.txt",
+				Type:       "deleteText",
+				SearchText: `\**hype\**`,
+				Path:       "delete_text.txt",
 			},
 			wantMsg: "Deleted all occurrences of `\\**hype\\**` in `delete_text.txt`",
 			out: `# HYPE ZONE
@@ -163,10 +163,10 @@ func TestTextActionError(t *testing.T) {
 			name: "invalid regex",
 			in:   inputText,
 			cfg: action.Config{
-				Type:   "replaceText",
-				Source: "noop",
-				Target: "($*^",
-				Path:   "invalid_regex.md",
+				Type:       "replaceText",
+				ApplyText:  "noop",
+				SearchText: "($*^",
+				Path:       "invalid_regex.md",
 			},
 		},
 	}
@@ -207,9 +207,9 @@ func TestFileAction(t *testing.T) {
 			name: "create file",
 			in:   inputText,
 			cfg: action.Config{
-				Type:   "createFile",
-				Source: filepath.Join(sd, "create_file.md"),
-				Path:   "create_file.md",
+				Type:    "createFile",
+				SrcPath: filepath.Join(sd, "create_file.md"),
+				DstPath: "create_file.md",
 			},
 			wantMsg: "Created file `create_file.md`",
 			out:     inputText,
@@ -219,9 +219,9 @@ func TestFileAction(t *testing.T) {
 			in:       inputText,
 			existing: `content goes here`,
 			cfg: action.Config{
-				Type:   "replaceFile",
-				Source: filepath.Join(sd, "replace_file.md"),
-				Path:   "replace_file.md",
+				Type:    "replaceFile",
+				SrcPath: filepath.Join(sd, "replace_file.md"),
+				DstPath: "replace_file.md",
 			},
 			wantMsg: "Replaced file `replace_file.md`",
 			out:     inputText,
@@ -230,9 +230,9 @@ func TestFileAction(t *testing.T) {
 			name: "createOrReplace missing file",
 			in:   inputText,
 			cfg: action.Config{
-				Type:   "createOrReplaceFile",
-				Source: filepath.Join(sd, "replace_missing_file.md"),
-				Path:   "replace_missing_file.md",
+				Type:    "createOrReplaceFile",
+				SrcPath: filepath.Join(sd, "replace_missing_file.md"),
+				DstPath: "replace_missing_file.md",
 			},
 			wantMsg: "Created file `replace_missing_file.md`",
 			out:     inputText,
@@ -242,9 +242,9 @@ func TestFileAction(t *testing.T) {
 			in:       inputText,
 			existing: `content goes here`,
 			cfg: action.Config{
-				Type:   "createOrReplaceFile",
-				Source: filepath.Join(sd, "replace_existing_file.md"),
-				Path:   "replace_existing_file.md",
+				Type:    "createOrReplaceFile",
+				SrcPath: filepath.Join(sd, "replace_existing_file.md"),
+				DstPath: "replace_existing_file.md",
 			},
 			wantMsg: "Replaced file `replace_existing_file.md`",
 			out:     inputText,
@@ -253,8 +253,8 @@ func TestFileAction(t *testing.T) {
 			name:     "delete file",
 			existing: `content goes here`,
 			cfg: action.Config{
-				Type: "deleteFile",
-				Path: "delete_file.md",
+				Type:    "deleteFile",
+				DstPath: "delete_file.md",
 			},
 			wantMsg: "Deleted file `delete_file.md`",
 		},
@@ -265,12 +265,12 @@ func TestFileAction(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create source file
 			if tt.in != "" {
-				if err := os.WriteFile(tt.cfg.Source, []byte(tt.in), os.ModePerm); err != nil {
+				if err := os.WriteFile(tt.cfg.SrcPath, []byte(tt.in), os.ModePerm); err != nil {
 					t.Fatalf("failed to write file: %v", err)
 				}
 			}
 			// Create existing target file
-			path := filepath.Join(td, tt.cfg.Path)
+			path := filepath.Join(td, tt.cfg.DstPath)
 			if tt.existing != "" {
 				if err := os.WriteFile(path, []byte(tt.existing), os.ModePerm); err != nil {
 					t.Fatalf("failed to write file: %v", err)
@@ -319,10 +319,10 @@ func TestParseError(t *testing.T) {
 		{
 			name: "invalid text action",
 			cfg: action.Config{
-				Type:   "garlicText",
-				Source: "noop",
-				Target: "noop",
-				Path:   "noop.md",
+				Type:    "garlicText",
+				SrcPath: "noop",
+				DstPath: "noop",
+				Path:    "noop.md",
 			},
 		},
 	}
