@@ -38,55 +38,39 @@ type Arguments struct {
 	Variables map[string]string
 }
 
-// TODO(@cszatmary): The current config is super confusing. Try to make it better.
-
+// Config is used to configure an action.
+// It is passed to Parse to create an Action instance.
 type Config struct {
-	Type   string `yaml:"type"`
-	Source string `yaml:"source"`
-	Target string `yaml:"target"`
-	Path   string `yaml:"path"`
-	Run    string `yaml:"run"`
+	// Identifies the type of action. Required for all actions.
+	Type string `yaml:"type"`
+
+	// The text to search for in a text action.
+	SearchText string `yaml:"searchText"`
+	// The text to apply in a text action.
+	ApplyText string `yaml:"applyText"`
+	// The path to the file in a text file.
+	// Must be relative to the target root.
+	Path string `yaml:"path"`
+
+	// The source file to use in a file action.
+	SrcPath string `yaml:"srcPath"`
+	// The destination file to use in a file action.
+	// Must be relative to the target root.
+	DstPath string `yaml:"dstPath"`
+
+	// The command to run in a command action.
+	Run string `yaml:"run"`
 }
 
 // Parse parses a config that describes an action and returns an Action.
 func Parse(cfg Config) (Action, error) {
-	if strings.HasSuffix(cfg.Type, "Text") || strings.HasSuffix(cfg.Type, "Line") {
+	switch {
+	case strings.HasSuffix(cfg.Type, "Text") || strings.HasSuffix(cfg.Type, "Line"):
 		return parseTextAction(cfg)
-	}
-	switch cfg.Type {
-	case fileCreate, fileReplace, fileCreateOrReplace, fileDelete:
-		if cfg.Path == "" {
-			return nil, errors.New("missing path for file action")
-		}
-		if cfg.Type == fileDelete {
-			return fileAction{typ: cfg.Type, dst: cfg.Path}, nil
-		}
-		if cfg.Source == "" {
-			return nil, errors.New("missing source for file action")
-		}
-		// Read and cache source file so we can reuse it for all targets
-		data, err := os.ReadFile(cfg.Source)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to read file %s", cfg.Source)
-		}
-		return fileAction{typ: cfg.Type, src: cfg.Source, dst: cfg.Path, data: data}, nil
-	case "runCommand":
-		const shellPrefix = "SHELL >> "
-		var args []string
-		if strings.HasPrefix(cfg.Run, shellPrefix) {
-			shellCmd := strings.TrimPrefix(cfg.Run, shellPrefix)
-			shellCmd = strings.TrimSpace(shellCmd)
-			if shellCmd == "" {
-				return nil, errors.New("missing shell command")
-			}
-			args = []string{"sh", "-c", shellCmd}
-		} else {
-			args = strings.Fields(cfg.Run)
-			if len(args) == 0 {
-				return nil, errors.New("missing args for run command")
-			}
-		}
-		return commandAction{args: args, str: cfg.Run}, nil
+	case strings.HasSuffix(cfg.Type, "File"):
+		return parseFileAction(cfg)
+	case strings.HasSuffix(cfg.Type, "Command"):
+		return parseCommandAction(cfg)
 	default:
 		return nil, errors.Errorf("unsupported action type %s", cfg.Type)
 	}
@@ -97,11 +81,11 @@ func parseTextAction(cfg Config) (Action, error) {
 	if cfg.Path == "" {
 		return nil, errors.New("missing path for text action")
 	}
-	if cfg.Target == "" {
-		return nil, errors.New("missing target for text action")
+	if cfg.SearchText == "" {
+		return nil, errors.New("missing search text for text action")
 	}
 
-	a := textAction{searchText: []byte(cfg.Target), path: cfg.Path}
+	a := textAction{searchText: []byte(cfg.SearchText), path: cfg.Path}
 	switch cfg.Type {
 	case "replaceLine":
 		a.typ = textReplaceLine
@@ -118,12 +102,62 @@ func parseTextAction(cfg Config) (Action, error) {
 	default:
 		return nil, errors.Errorf("unsupported text action type %s", cfg.Type)
 	}
-	if cfg.Source == "" {
-		return nil, errors.New("missing source for text action")
+	if cfg.ApplyText == "" {
+		return nil, errors.New("missing apply text for text action")
 	}
 
-	a.applyText = []byte(cfg.Source)
+	a.applyText = []byte(cfg.ApplyText)
 	return a, nil
+}
+
+func parseFileAction(cfg Config) (Action, error) {
+	if cfg.DstPath == "" {
+		return nil, errors.New("missing destination path for file action")
+	}
+
+	a := fileAction{dst: cfg.DstPath}
+	switch cfg.Type {
+	case "createFile":
+		a.typ = fileCreate
+	case "replaceFile":
+		a.typ = fileReplace
+	case "createOrReplaceFile":
+		a.typ = fileCreateOrReplace
+	case "deleteFile":
+		a.typ = fileDelete
+		return a, nil
+	default:
+		return nil, errors.Errorf("unsupported file action type %s", cfg.Type)
+	}
+	if cfg.SrcPath == "" {
+		return nil, errors.New("missing source path for file action")
+	}
+
+	// Read and cache source file so we can reuse it for all targets
+	data, err := os.ReadFile(cfg.SrcPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to read file %s", cfg.SrcPath)
+	}
+	a.src = cfg.SrcPath
+	a.data = data
+	return a, nil
+}
+
+func parseCommandAction(cfg Config) (Action, error) {
+	if cfg.Run == "" {
+		return nil, errors.New("missing run field for command action")
+	}
+
+	var args []string
+	switch cfg.Type {
+	case "runCommand":
+		args = strings.Fields(cfg.Run)
+	case "shellCommand":
+		args = []string{"sh", "-c", cfg.Run}
+	default:
+		return nil, errors.Errorf("unsupported command action type %s", cfg.Type)
+	}
+	return commandAction{args: args, str: cfg.Run}, nil
 }
 
 type textActionType int
@@ -242,16 +276,18 @@ func (a textAction) String() string {
 	}
 }
 
+type fileActionType int
+
 const (
-	fileCreate          = "createFile"
-	fileReplace         = "replaceFile"
-	fileCreateOrReplace = "createOrReplaceFile"
-	fileDelete          = "deleteFile"
+	fileCreate fileActionType = iota
+	fileReplace
+	fileCreateOrReplace
+	fileDelete
 )
 
 // fileAction is an action that operates on files.
 type fileAction struct {
-	typ  string
+	typ  fileActionType
 	src  string
 	dst  string // path in the target
 	data []byte // src data; cached so it can be reused each run
@@ -293,12 +329,16 @@ func (a fileAction) Run(t Target, args Arguments) (string, error) {
 
 func (a fileAction) String() string {
 	switch a.typ {
-	case fileCreate, fileReplace, fileCreateOrReplace:
-		return fmt.Sprintf("%s: %q, source: %q", a.typ, a.dst, a.src)
+	case fileCreate:
+		return fmt.Sprintf("create file: %q\n  from: %q", a.dst, a.src)
+	case fileReplace:
+		return fmt.Sprintf("replace file: %q\n  with: %q", a.dst, a.src)
+	case fileCreateOrReplace:
+		return fmt.Sprintf("create or replace file: %q\n  with: %q", a.dst, a.src)
 	case fileDelete:
-		return fmt.Sprintf("%s: %q", a.typ, a.dst)
+		return fmt.Sprintf("delete file: %q", a.dst)
 	default:
-		panic("impossible: invalid type: " + a.typ)
+		panic("impossible: invalid type")
 	}
 }
 
