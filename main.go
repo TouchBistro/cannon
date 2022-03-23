@@ -106,12 +106,53 @@ func execute() error {
 	}
 	newBranch := "cannon/change-" + hex.EncodeToString(b)
 
-	repos, err := prepareRepos(ctx, conf.Repos, newBranch, cannonDir)
+	repos, err := progress.RunParallelT(ctx, progress.RunParallelOptions{
+		Message: "Preparing repos",
+		Count:   len(conf.Repos),
+	}, func(ctx context.Context, i int) (*git.Repository, error) {
+		r := conf.Repos[i]
+		tracker := progress.TrackerFromContext(ctx)
+		tracker.Debugf("Preparing repo %s", r.Name)
+
+		repo, err := git.Prepare(r.Name, cannonDir, r.Base, tracker)
+		if err != nil {
+			return nil, err
+		}
+		if err := repo.CreateBranch(newBranch); err != nil {
+			return nil, err
+		}
+		return repo, nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to prepare repos: %w", err)
 	}
 
-	msgs, err := performActions(ctx, repos, actions)
+	msgs, err := progress.RunParallelT(ctx, progress.RunParallelOptions{
+		Message:       "Running actions on repos",
+		Count:         len(repos),
+		CancelOnError: true,
+	}, func(ctx context.Context, i int) ([]string, error) {
+		repo := repos[i]
+		tracker := progress.TrackerFromContext(ctx)
+		tracker.Debugf("Running actions on repo %s", repo.Name())
+
+		parts := strings.Split(repo.Name(), "/")
+		// Variables that will be shared across all actions
+		vars := map[string]string{
+			"REPO_OWNER": parts[0],
+			"REPO_NAME":  parts[1],
+		}
+		args := action.Arguments{Variables: vars}
+		msgs := make([]string, 0, len(actions))
+		for _, a := range actions {
+			msg, err := a.Run(ctx, repo, args)
+			if err != nil {
+				return nil, err
+			}
+			msgs = append(msgs, msg)
+		}
+		return msgs, nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to perform actions on repos: %w", err)
 	}
@@ -135,7 +176,31 @@ func execute() error {
 		return nil
 	}
 
-	prURLs, err := pushChanges(ctx, repos, msgs, newBranch, opts.noPR)
+	prURLs, err := progress.RunParallelT(ctx, progress.RunParallelOptions{
+		Message: "Pushing changes to GitHub",
+		Count:   len(repos),
+	}, func(ctx context.Context, i int) (string, error) {
+		repo := repos[i]
+		tracker := progress.TrackerFromContext(ctx)
+		tracker.Debugf("Pushing changes for repo %s", repo.Name())
+
+		if err := repo.Push(); err != nil {
+			return "", err
+		}
+		if opts.noPR {
+			return git.CreatePRURL(repo.Name(), newBranch), nil
+		}
+
+		tracker.Debugf("Creating PR for repo %s", repo.Name())
+		var desc strings.Builder
+		desc.WriteString("Changes applied by commit-cannon:\n")
+		for _, m := range msgs[i] {
+			desc.WriteString("  * ")
+			desc.WriteString(m)
+			desc.WriteByte('\n')
+		}
+		return repo.CreatePR(newBranch, desc.String())
+	})
 	if err != nil {
 		return fmt.Errorf("failed to push changes to repos: %w", err)
 	}
@@ -199,122 +264,4 @@ func promptForConfirmation(repos []repoConfig, actions []action.Action) (bool, e
 
 	choice := strings.ToLower(strings.TrimSpace(input))
 	return choice == "y", nil
-}
-
-func prepareRepos(ctx context.Context, repoConfigs []repoConfig, newBranch, cannonDir string) ([]*git.Repository, error) {
-	repoCh := make(chan *git.Repository, len(repoConfigs))
-	err := progress.RunParallel(ctx, progress.RunParallelOptions{
-		Message: "Preparing repos",
-		Count:   len(repoConfigs),
-	}, func(ctx context.Context, i int) error {
-		r := repoConfigs[i]
-		tracker := progress.TrackerFromContext(ctx)
-		tracker.Debugf("Preparing repo %s", r.Name)
-
-		repo, err := git.Prepare(r.Name, cannonDir, r.Base, tracker)
-		if err != nil {
-			return err
-		}
-		if err := repo.CreateBranch(newBranch); err != nil {
-			return err
-		}
-		repoCh <- repo
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	close(repoCh)
-	repos := make([]*git.Repository, 0, len(repoConfigs))
-	for r := range repoCh {
-		repos = append(repos, r)
-	}
-	return repos, nil
-}
-
-func performActions(ctx context.Context, repos []*git.Repository, actions []action.Action) ([][]string, error) {
-	msgsCh := make(chan []string, len(repos))
-	err := progress.RunParallel(ctx, progress.RunParallelOptions{
-		Message:       "Running actions on repos",
-		Count:         len(repos),
-		CancelOnError: true,
-	}, func(ctx context.Context, i int) error {
-		repo := repos[i]
-		tracker := progress.TrackerFromContext(ctx)
-		tracker.Debugf("Running actions on repo %s", repo.Name())
-
-		parts := strings.Split(repo.Name(), "/")
-		// Variables that will be shared across all actions
-		vars := map[string]string{
-			"REPO_OWNER": parts[0],
-			"REPO_NAME":  parts[1],
-		}
-		args := action.Arguments{Variables: vars}
-		msgs := make([]string, 0, len(actions))
-		for _, a := range actions {
-			msg, err := a.Run(ctx, repo, args)
-			if err != nil {
-				return err
-			}
-			msgs = append(msgs, msg)
-		}
-		msgsCh <- msgs
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	close(msgsCh)
-	msgs := make([][]string, 0, len(repos))
-	for m := range msgsCh {
-		msgs = append(msgs, m)
-	}
-	return msgs, nil
-}
-
-func pushChanges(ctx context.Context, repos []*git.Repository, msgs [][]string, newBranch string, noPR bool) ([]string, error) {
-	urlCh := make(chan string, len(repos))
-	err := progress.RunParallel(ctx, progress.RunParallelOptions{
-		Message: "Pushing changes to GitHub",
-		Count:   len(repos),
-	}, func(ctx context.Context, i int) error {
-		repo := repos[i]
-		tracker := progress.TrackerFromContext(ctx)
-		tracker.Debugf("Pushing changes for repo %s", repo.Name())
-
-		if err := repo.Push(); err != nil {
-			return err
-		}
-		if noPR {
-			urlCh <- git.CreatePRURL(repo.Name(), newBranch)
-			return nil
-		}
-
-		tracker.Debugf("Creating PR for repo %s", repo.Name())
-		var desc strings.Builder
-		desc.WriteString("Changes applied by commit-cannon:\n")
-		for _, m := range msgs[i] {
-			desc.WriteString("  * ")
-			desc.WriteString(m)
-			desc.WriteByte('\n')
-		}
-		url, err := repo.CreatePR(newBranch, desc.String())
-		if err != nil {
-			return err
-		}
-		urlCh <- url
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	close(urlCh)
-	urls := make([]string, 0, len(repos))
-	for u := range urlCh {
-		urls = append(urls, u)
-	}
-	return urls, nil
 }
