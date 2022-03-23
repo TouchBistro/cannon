@@ -1,6 +1,7 @@
 package action_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -131,7 +132,7 @@ This section is pretty .
 				t.Fatalf("unexpected error %v", err)
 			}
 
-			msg, err := a.Run(pathTarget(td), action.Arguments{Variables: tt.vars})
+			msg, err := a.Run(context.Background(), pathTarget(td), action.Arguments{Variables: tt.vars})
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -183,7 +184,7 @@ func TestTextActionError(t *testing.T) {
 				t.Fatalf("unexpected error %v", err)
 			}
 
-			_, err = a.Run(pathTarget(td), action.Arguments{Variables: tt.vars})
+			_, err = a.Run(context.Background(), pathTarget(td), action.Arguments{Variables: tt.vars})
 			if err == nil {
 				t.Error("want non-nil error", err)
 			}
@@ -282,7 +283,7 @@ func TestFileAction(t *testing.T) {
 				t.Fatalf("unexpected error %v", err)
 			}
 
-			msg, err := a.Run(pathTarget(td), action.Arguments{Variables: tt.vars})
+			msg, err := a.Run(context.Background(), pathTarget(td), action.Arguments{Variables: tt.vars})
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}

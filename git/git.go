@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,11 +13,10 @@ import (
 
 	"github.com/TouchBistro/goutils/command"
 	"github.com/TouchBistro/goutils/file"
+	"github.com/TouchBistro/goutils/progress"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 // Repository holds the state of a Git repository.
@@ -41,7 +41,7 @@ func (repo *Repository) Path() string {
 // Prepare prepares the repo for use and returns a Repository instance.
 // If the repo does not exist, it will be cloned to dir. Otherwise, any
 // uncommitted changes will be discarded and the base branch will be updated.
-func Prepare(name, dir, baseBranch string, logger *logrus.Logger) (*Repository, error) {
+func Prepare(name, dir, baseBranch string, logger progress.Logger) (*Repository, error) {
 	path := filepath.Join(dir, name)
 	repo := &Repository{name: name, path: path, baseBranch: baseBranch}
 	skipCleanup := false
@@ -55,20 +55,20 @@ func Prepare(name, dir, baseBranch string, logger *logrus.Logger) (*Repository, 
 			URL: fmt.Sprintf("git@github.com:%s.git", name),
 		})
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to clone %s to %s", name, dir)
+			return nil, fmt.Errorf("failed to clone %s to %s: %w", name, dir, err)
 		}
 		logger.Debugf("Cloned repo %s to %s", name, dir)
 	} else {
 		repo.r, err = git.PlainOpen(path)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to open repo at path %s", path)
+			return nil, fmt.Errorf("failed to open repo at path %s: %w", path, err)
 		}
 	}
 
 	// Get worktree now and save it since most operations require it.
 	repo.w, err = repo.r.Worktree()
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get worktree for repo %s", name)
+		return nil, fmt.Errorf("failed to get worktree for repo %s: %w", name, err)
 	}
 	if skipCleanup {
 		return repo, nil
@@ -84,13 +84,13 @@ func Prepare(name, dir, baseBranch string, logger *logrus.Logger) (*Repository, 
 	logger.Debugf("Cleaning and updating repo %s", name)
 	err = repo.w.Clean(&git.CleanOptions{Dir: true})
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to clean repo %s", name)
+		return nil, fmt.Errorf("failed to clean repo %s: %w", name, err)
 	}
 
 	// See if we need to switch branches.
 	branchRef, err := repo.r.Head()
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get HEAD of repo %s", name)
+		return nil, fmt.Errorf("failed to get HEAD of repo %s: %w", name, err)
 	}
 	if branchRef.Name().Short() != baseBranch {
 		err := repo.w.Checkout(&git.CheckoutOptions{
@@ -98,19 +98,19 @@ func Prepare(name, dir, baseBranch string, logger *logrus.Logger) (*Repository, 
 			Force:  true,
 		})
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to checkout %s branch in repo %s", baseBranch, name)
+			return nil, fmt.Errorf("failed to checkout %s branch in repo %s: %w", baseBranch, name, err)
 		}
 		// Delete the old branch we were on.
 		err = repo.r.Storer.RemoveReference(branchRef.Name())
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to delete branch %s in repo %s", branchRef.Name().Short(), name)
+			return nil, fmt.Errorf("failed to delete branch %s in repo %s: %w", branchRef.Name().Short(), name, err)
 		}
 	}
 
 	// Update branch.
 	err = repo.w.Pull(&git.PullOptions{SingleBranch: true})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		return nil, errors.Wrapf(err, "failed to pull changes from remote for repo %s", name)
+		return nil, fmt.Errorf("failed to pull changes from remote for repo %s: %w", name, err)
 	}
 	logger.Debugf("Updated repo %s", name)
 	return repo, nil
@@ -120,7 +120,7 @@ func Prepare(name, dir, baseBranch string, logger *logrus.Logger) (*Repository, 
 func (repo *Repository) CreateBranch(branch string) error {
 	headRef, err := repo.r.Head()
 	if err != nil {
-		return errors.Wrapf(err, "failed to get HEAD for repo %s", repo.name)
+		return fmt.Errorf("failed to get HEAD for repo %s: %w", repo.name, err)
 	}
 	branchRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(branch), headRef.Hash())
 	err = repo.w.Checkout(&git.CheckoutOptions{
@@ -129,7 +129,7 @@ func (repo *Repository) CreateBranch(branch string) error {
 		Create: true,
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed to checkout branch %s in repo %s", branch, repo.name)
+		return fmt.Errorf("failed to checkout branch %s in repo %s: %w", branch, repo.name, err)
 	}
 	return nil
 }
@@ -140,7 +140,7 @@ func (repo *Repository) CommitChanges(msg string) error {
 	var stderr bytes.Buffer
 	cmd := command.New(command.WithDir(repo.path), command.WithStderr(&stderr))
 	if err := cmd.Exec("git", "add", "."); err != nil {
-		return errors.Wrapf(err, "failed to stage changes: %s", stderr.String())
+		return fmt.Errorf("failed to stage changes: %s: %w", stderr.String(), err)
 	}
 
 	username, email, err := user()
@@ -155,7 +155,7 @@ func (repo *Repository) CommitChanges(msg string) error {
 		},
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed to commit changes in repo %s", repo.name)
+		return fmt.Errorf("failed to commit changes in repo %s: %w", repo.name, err)
 	}
 	return nil
 }
@@ -163,7 +163,7 @@ func (repo *Repository) CommitChanges(msg string) error {
 func (repo *Repository) Push() error {
 	err := repo.r.Push(&git.PushOptions{RemoteName: "origin"})
 	if err != nil {
-		return errors.Wrapf(err, "failed to push to remote in repo %s", repo.name)
+		return fmt.Errorf("failed to push to remote in repo %s: %w", repo.name, err)
 	}
 	return nil
 }
@@ -174,7 +174,7 @@ func user() (username, email string, err error) {
 	cmd := command.New(command.WithStdout(&outbuf), command.WithStderr(&errbuf))
 	err = cmd.Exec("git", "config", "--get", "--global", "user.name")
 	if err != nil {
-		err = errors.Wrapf(err, "failed to get git user name: %s", errbuf.String())
+		err = fmt.Errorf("failed to get git user name: %s: %w", errbuf.String(), err)
 		return
 	}
 	username = strings.TrimSpace(outbuf.String())
@@ -183,7 +183,7 @@ func user() (username, email string, err error) {
 	errbuf.Reset()
 	err = cmd.Exec("git", "config", "--get", "--global", "user.email")
 	if err != nil {
-		err = errors.Wrapf(err, "failed to get git user email: %s", errbuf.String())
+		err = fmt.Errorf("failed to get git user email: %s: %w", errbuf.String(), err)
 		return
 	}
 	email = strings.TrimSpace(outbuf.String())
@@ -205,13 +205,13 @@ func (repo *Repository) CreatePR(branch, desc string) (string, error) {
 		"body":  desc,
 	})
 	if err != nil {
-		return "", errors.Wrap(err, "failed to create JSON body for request")
+		return "", fmt.Errorf("failed to create JSON body for request: %w", err)
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/pulls", repo.name)
 	req, err := http.NewRequest("POST", url, &buf)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to create POST request to GitHub API")
+		return "", fmt.Errorf("failed to create POST request to GitHub API: %w", err)
 	}
 	token := fmt.Sprintf("token %s", os.Getenv("GITHUB_TOKEN"))
 	req.Header.Add("Authorization", token)
@@ -220,11 +220,11 @@ func (repo *Repository) CreatePR(branch, desc string) (string, error) {
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", errors.Wrapf(err, "unable to create PR for repo %s", repo.name)
+		return "", fmt.Errorf("unable to create PR for repo %s: %w", repo.name, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 201 {
-		return "", errors.Errorf("got %d response from GitHub API", res.StatusCode)
+		return "", fmt.Errorf("got %d response from GitHub API", res.StatusCode)
 	}
 
 	var rb struct {
@@ -232,7 +232,7 @@ func (repo *Repository) CreatePR(branch, desc string) (string, error) {
 	}
 	err = json.NewDecoder(res.Body).Decode(&rb)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to decode JSON from reponse body")
+		return "", fmt.Errorf("failed to decode JSON from reponse body: %w", err)
 	}
 	return rb.HTMLURL, nil
 }
