@@ -181,14 +181,14 @@ type textAction struct {
 }
 
 func (a textAction) Run(_ context.Context, t Target, args Arguments) (string, error) {
-	ve := variableExpander{vars: args.Variables}
-	searchText := text.ExpandVariables(a.searchText, ve.mapping)
-	if ve.err != nil {
-		return "", fmt.Errorf("failed to expand variables in action target: %w", ve.err)
+	vm := text.NewVariableMapper(args.Variables)
+	searchText := text.ExpandVariables(a.searchText, vm.Map)
+	if len(vm.Missing()) > 0 {
+		return "", fmt.Errorf("failed to expand variables in action target, unknown variables %q", strings.Join(vm.Missing(), ", "))
 	}
-	applyText := text.ExpandVariables(a.applyText, ve.mapping)
-	if ve.err != nil {
-		return "", fmt.Errorf("failed to expand variables in action source: %w", ve.err)
+	applyText := text.ExpandVariables(a.applyText, vm.Map)
+	if len(vm.Missing()) > 0 {
+		return "", fmt.Errorf("failed to expand variables in action source, unknown variables %q", strings.Join(vm.Missing(), ", "))
 	}
 	// Enable multi-line mode by adding flag if not a line action
 	// https://golang.org/pkg/regexp/syntax/
@@ -314,10 +314,10 @@ func (a fileAction) Run(_ context.Context, t Target, args Arguments) (string, er
 		return fmt.Sprintf("Deleted file `%s`", a.dst), nil
 	}
 
-	ve := variableExpander{vars: args.Variables}
-	data := text.ExpandVariables(a.data, ve.mapping)
-	if ve.err != nil {
-		return "", fmt.Errorf("failed to expand variables in file %s: %w", a.src, ve.err)
+	vm := text.NewVariableMapper(args.Variables)
+	data := text.ExpandVariables(a.data, vm.Map)
+	if len(vm.Missing()) > 0 {
+		return "", fmt.Errorf("failed to expand variables in file %s, unknown variables %q", a.src, strings.Join(vm.Missing(), ", "))
 	}
 	if err := os.WriteFile(dstPath, data, 0o644); err != nil {
 		return "", fmt.Errorf("failed to write file %s: %w", dstPath, err)
@@ -362,21 +362,4 @@ func (a commandAction) Run(ctx context.Context, t Target, _ Arguments) (string, 
 
 func (a commandAction) String() string {
 	return fmt.Sprintf("run: %s", a.str)
-}
-
-// variableExpander is a small helper type which expands variables in text.
-// It records the first missing variable found, if any.
-type variableExpander struct {
-	vars map[string]string
-	err  error
-}
-
-func (ve *variableExpander) mapping(name string) string {
-	if v, ok := ve.vars[name]; ok {
-		return v
-	}
-	if ve.err == nil {
-		ve.err = fmt.Errorf("unknown variable %q", name)
-	}
-	return ""
 }

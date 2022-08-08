@@ -80,15 +80,29 @@ func execute() error {
 	for i, c := range conf.Actions {
 		a, err := action.Parse(c)
 		if err != nil {
-			return fmt.Errorf("faield to parse action config: %w", err)
+			return fmt.Errorf("failed to parse action config: %w", err)
 		}
 		actions[i] = a
 	}
-	ok, err := promptForConfirmation(conf.Repos, actions)
-	if err != nil {
-		return err
+
+	// Show the actions that will be performed to the user and prompt for confirmation before proceeding.
+	fmt.Println("Affected repos:")
+	for _, repo := range conf.Repos {
+		fmt.Printf("- %s\n", repo.Name)
 	}
-	if !ok {
+	fmt.Println("\nActions to perform:")
+	for _, a := range actions {
+		fmt.Printf("- %s\n\n", a)
+	}
+	// Read the user's response
+	fmt.Print("\nConfirm running with these parameters (y/n): ")
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read user input: %w", err)
+	}
+	// Support Y/y, everything else is no.
+	if strings.ToLower(strings.TrimSpace(input)) != "y" {
 		fmt.Println("Aborting")
 		return nil
 	}
@@ -127,12 +141,18 @@ func execute() error {
 		return fmt.Errorf("failed to prepare repos: %w", err)
 	}
 
-	msgs, err := progress.RunParallelT(ctx, progress.RunParallelOptions{
+	type actionResult struct {
+		repoIndex int
+		msgs      []string
+	}
+
+	actionResults, err := progress.RunParallelT(ctx, progress.RunParallelOptions{
 		Message:       "Running actions on repos",
 		Count:         len(repos),
 		CancelOnError: true,
-	}, func(ctx context.Context, i int) ([]string, error) {
+	}, func(ctx context.Context, i int) (actionResult, error) {
 		repo := repos[i]
+
 		tracker := progress.TrackerFromContext(ctx)
 		tracker.Debugf("Running actions on repo %s", repo.Name())
 
@@ -143,18 +163,22 @@ func execute() error {
 			"REPO_NAME":  parts[1],
 		}
 		args := action.Arguments{Variables: vars}
-		msgs := make([]string, 0, len(actions))
+		res := actionResult{repoIndex: i, msgs: make([]string, 0, len(actions))}
 		for _, a := range actions {
 			msg, err := a.Run(ctx, repo, args)
 			if err != nil {
-				return nil, err
+				return res, err
 			}
-			msgs = append(msgs, msg)
+			res.msgs = append(res.msgs, msg)
 		}
-		return msgs, nil
+		return res, nil
 	})
 	if err != nil {
 		return fmt.Errorf("failed to perform actions on repos: %w", err)
+	}
+	repoMsgs := make(map[int][]string)
+	for _, res := range actionResults {
+		repoMsgs[res.repoIndex] = res.msgs
 	}
 
 	err = progress.RunParallel(ctx, progress.RunParallelOptions{
@@ -194,7 +218,11 @@ func execute() error {
 		tracker.Debugf("Creating PR for repo %s", repo.Name())
 		var desc strings.Builder
 		desc.WriteString("Changes applied by commit-cannon:\n")
-		for _, m := range msgs[i] {
+		msgs, ok := repoMsgs[i]
+		if !ok {
+			return "", fmt.Errorf("impossible: no messages found for repo %s", repo.Name())
+		}
+		for _, m := range msgs {
 			desc.WriteString("  * ")
 			desc.WriteString(m)
 			desc.WriteByte('\n')
@@ -242,26 +270,4 @@ func readConfig(configPath string) (config, error) {
 		}
 	}
 	return conf, nil
-}
-
-func promptForConfirmation(repos []repoConfig, actions []action.Action) (bool, error) {
-	fmt.Println("Affected repos:")
-	for _, repo := range repos {
-		fmt.Printf("- %s\n", repo.Name)
-	}
-	fmt.Println("\nActions to perform:")
-	for _, a := range actions {
-		fmt.Printf("- %s\n\n", a)
-	}
-
-	// Have user confirm changes
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("\nConfirm running with these parameters (y/n): ")
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return false, fmt.Errorf("failed to read user input: %w", err)
-	}
-
-	choice := strings.ToLower(strings.TrimSpace(input))
-	return choice == "y", nil
 }
