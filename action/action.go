@@ -2,15 +2,17 @@ package action
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
-	"github.com/TouchBistro/goutils/command"
 	"github.com/TouchBistro/goutils/file"
-	"github.com/pkg/errors"
+	"github.com/TouchBistro/goutils/text"
 )
 
 // Action represents an action that can be applied.
@@ -23,7 +25,7 @@ import (
 //
 // The String method provides a string description of the action.
 type Action interface {
-	Run(t Target, args Arguments) (string, error)
+	Run(ctx context.Context, t Target, args Arguments) (string, error)
 	String() string
 }
 
@@ -72,7 +74,7 @@ func Parse(cfg Config) (Action, error) {
 	case strings.HasSuffix(cfg.Type, "Command"):
 		return parseCommandAction(cfg)
 	default:
-		return nil, errors.Errorf("unsupported action type %s", cfg.Type)
+		return nil, fmt.Errorf("unsupported action type %s", cfg.Type)
 	}
 }
 
@@ -100,7 +102,7 @@ func parseTextAction(cfg Config) (Action, error) {
 		a.typ = textDelete
 		return a, nil
 	default:
-		return nil, errors.Errorf("unsupported text action type %s", cfg.Type)
+		return nil, fmt.Errorf("unsupported text action type %s", cfg.Type)
 	}
 	if cfg.ApplyText == "" {
 		return nil, errors.New("missing apply text for text action")
@@ -127,7 +129,7 @@ func parseFileAction(cfg Config) (Action, error) {
 		a.typ = fileDelete
 		return a, nil
 	default:
-		return nil, errors.Errorf("unsupported file action type %s", cfg.Type)
+		return nil, fmt.Errorf("unsupported file action type %s", cfg.Type)
 	}
 	if cfg.SrcPath == "" {
 		return nil, errors.New("missing source path for file action")
@@ -136,7 +138,7 @@ func parseFileAction(cfg Config) (Action, error) {
 	// Read and cache source file so we can reuse it for all targets
 	data, err := os.ReadFile(cfg.SrcPath)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to read file %s", cfg.SrcPath)
+		return nil, fmt.Errorf("failed to read file %s: %w", cfg.SrcPath, err)
 	}
 	a.src = cfg.SrcPath
 	a.data = data
@@ -155,7 +157,7 @@ func parseCommandAction(cfg Config) (Action, error) {
 	case "shellCommand":
 		args = []string{"sh", "-c", cfg.Run}
 	default:
-		return nil, errors.Errorf("unsupported command action type %s", cfg.Type)
+		return nil, fmt.Errorf("unsupported command action type %s", cfg.Type)
 	}
 	return commandAction{args: args, str: cfg.Run}, nil
 }
@@ -178,17 +180,15 @@ type textAction struct {
 	path       string
 }
 
-func (a textAction) Run(t Target, args Arguments) (string, error) {
-	// TODO(@cszatmary): Do we need to support vars in the search text?
-	// Would be nice to not have that requirement, because then we could pre-compile the regex
-	// in parse which would allow for catching errors earily.
-	searchText, err := expandVars(a.searchText, args.Variables)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to expand variables in action target")
+func (a textAction) Run(_ context.Context, t Target, args Arguments) (string, error) {
+	vm := text.NewVariableMapper(args.Variables)
+	searchText := text.ExpandVariables(a.searchText, vm.Map)
+	if len(vm.Missing()) > 0 {
+		return "", fmt.Errorf("failed to expand variables in action target, unknown variables %q", strings.Join(vm.Missing(), ", "))
 	}
-	applyText, err := expandVars(a.applyText, args.Variables)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to expand variables in action source")
+	applyText := text.ExpandVariables(a.applyText, vm.Map)
+	if len(vm.Missing()) > 0 {
+		return "", fmt.Errorf("failed to expand variables in action source, unknown variables %q", strings.Join(vm.Missing(), ", "))
 	}
 	// Enable multi-line mode by adding flag if not a line action
 	// https://golang.org/pkg/regexp/syntax/
@@ -198,13 +198,13 @@ func (a textAction) Run(t Target, args Arguments) (string, error) {
 	}
 	regex, err := regexp.Compile(regexStr)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to compile regex from action target")
+		return "", fmt.Errorf("unable to compile regex from action target: %w", err)
 	}
 
 	path := filepath.Join(t.Path(), a.path)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to read file %s", path)
+		return "", fmt.Errorf("failed to read file %s: %w", path, err)
 	}
 
 	var output []byte
@@ -254,7 +254,7 @@ func (a textAction) Run(t Target, args Arguments) (string, error) {
 	}
 
 	if err := os.WriteFile(path, output, 0o644); err != nil {
-		return "", errors.Wrapf(err, "failed to write file %s", path)
+		return "", fmt.Errorf("failed to write file %s: %w", path, err)
 	}
 	return msg, nil
 }
@@ -293,33 +293,34 @@ type fileAction struct {
 	data []byte // src data; cached so it can be reused each run
 }
 
-func (a fileAction) Run(t Target, args Arguments) (string, error) {
+func (a fileAction) Run(_ context.Context, t Target, args Arguments) (string, error) {
 	dstPath := filepath.Join(t.Path(), a.dst)
 	exists := file.Exists(dstPath)
 	switch a.typ {
 	case fileCreate:
 		if exists {
-			return "", errors.Errorf("file %s already exists", dstPath)
+			return "", fmt.Errorf("file %s already exists", dstPath)
 		}
 	case fileReplace, fileDelete:
 		if !exists {
-			return "", errors.Errorf("file %s does not exist", dstPath)
+			return "", fmt.Errorf("file %s does not exist", dstPath)
 		}
 	}
 
 	if a.typ == fileDelete {
 		if err := os.Remove(dstPath); err != nil {
-			return "", errors.Wrapf(err, "failed to delete file %s", dstPath)
+			return "", fmt.Errorf("failed to delete file %s: %w", dstPath, err)
 		}
 		return fmt.Sprintf("Deleted file `%s`", a.dst), nil
 	}
 
-	data, err := expandVars(a.data, args.Variables)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to expand variables in file %s", a.src)
+	vm := text.NewVariableMapper(args.Variables)
+	data := text.ExpandVariables(a.data, vm.Map)
+	if len(vm.Missing()) > 0 {
+		return "", fmt.Errorf("failed to expand variables in file %s, unknown variables %q", a.src, strings.Join(vm.Missing(), ", "))
 	}
 	if err := os.WriteFile(dstPath, data, 0o644); err != nil {
-		return "", errors.Wrapf(err, "failed to write file %s", dstPath)
+		return "", fmt.Errorf("failed to write file %s: %w", dstPath, err)
 	}
 	if exists {
 		return fmt.Sprintf("Replaced file `%s`", a.dst), nil
@@ -348,54 +349,17 @@ type commandAction struct {
 	str  string   // the command string from the config; for printing
 }
 
-func (a commandAction) Run(t Target, _ Arguments) (string, error) {
+func (a commandAction) Run(ctx context.Context, t Target, _ Arguments) (string, error) {
 	var errbuf bytes.Buffer
-	cmd := command.New(command.WithStderr(&errbuf), command.WithDir(t.Path()))
-	err := cmd.Exec(a.args[0], a.args[1:]...)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to run command %s at %s: %s", a.str, t.Path(), errbuf.String())
+	cmd := exec.CommandContext(ctx, a.args[0], a.args[1:]...)
+	cmd.Stderr = &errbuf
+	cmd.Dir = t.Path()
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to run command %s at %s: %s: %w", a.str, t.Path(), errbuf.String(), err)
 	}
 	return fmt.Sprintf("Ran command `%s`", a.str), nil
 }
 
 func (a commandAction) String() string {
 	return fmt.Sprintf("run: %s", a.str)
-}
-
-// Regex to match variable substitution of the form ${VAR}
-var varRegex = regexp.MustCompile(`\$\{([\w-@:]+)\}`)
-
-// expandVars returns a copy of src with variables of the form ${VAR} expanded.
-// If src contains no vars, it is returned unchanged. If a variable value is not
-// found, an error will be returned.
-func expandVars(src []byte, vars map[string]string) ([]byte, error) {
-	matches := varRegex.FindAllSubmatchIndex(src, -1)
-	if matches == nil {
-		return src, nil
-	}
-
-	lastEndIndex := 0
-	var b []byte
-	for _, match := range matches {
-		// match[0] is the start index of the whole match
-		startIndex := match[0]
-		// match[1] is the end index of the whole match (exclusive)
-		endIndex := match[1]
-		// match[2] is start index of group
-		startIndexGroup := match[2]
-		// match[3] is end index of group (exclusive)
-		endIndexGroup := match[3]
-
-		varName := string(src[startIndexGroup:endIndexGroup])
-		varValue, ok := vars[varName]
-		if !ok {
-			return nil, errors.Errorf("unknown variable %q", varName)
-		}
-
-		b = append(b, src[lastEndIndex:startIndex]...)
-		b = append(b, varValue...)
-		lastEndIndex = endIndex
-	}
-	b = append(b, src[lastEndIndex:]...)
-	return b, nil
 }

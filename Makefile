@@ -2,8 +2,8 @@
 
 # Get all dependencies
 setup:
-	curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh
-	go mod download
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v1.48.0
+	go mod tidy
 .PHONY: setup
 
 # Build cannon
