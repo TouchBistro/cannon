@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 
@@ -33,6 +34,9 @@ type options struct {
 
 func main() {
 	if err := execute(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			err = &fatal.Error{Code: 130, Msg: "\nOperation cancelled"}
+		}
 		fatal.PrintAndExit(err)
 	}
 }
@@ -108,11 +112,21 @@ func execute() error {
 	}
 	fmt.Println()
 
+	// Listen of SIGINT to do a graceful abort
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	abort := make(chan os.Signal, 1)
+	signal.Notify(abort, os.Interrupt)
+	go func() {
+		<-abort
+		cancel()
+	}()
+
 	tracker := &spinner.Tracker{
 		OutputLogger:    logger,
 		PersistMessages: opts.verbose,
 	}
-	ctx := progress.ContextWithTracker(context.Background(), tracker)
+	ctx = progress.ContextWithTracker(ctx, tracker)
 	// Create a random number suffix so each branch is unique.
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
@@ -128,7 +142,7 @@ func execute() error {
 		tracker := progress.TrackerFromContext(ctx)
 		tracker.Debugf("Preparing repo %s", r.Name)
 
-		repo, err := git.Prepare(r.Name, cannonDir, r.Base, tracker)
+		repo, err := git.Prepare(ctx, r.Name, cannonDir, r.Base)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +222,7 @@ func execute() error {
 		tracker := progress.TrackerFromContext(ctx)
 		tracker.Debugf("Pushing changes for repo %s", repo.Name())
 
-		if err := repo.Push(); err != nil {
+		if err := repo.Push(ctx); err != nil {
 			return "", err
 		}
 		if opts.noPR {
@@ -227,7 +241,7 @@ func execute() error {
 			desc.WriteString(m)
 			desc.WriteByte('\n')
 		}
-		return repo.CreatePR(newBranch, desc.String())
+		return repo.CreatePR(ctx, newBranch, desc.String())
 	})
 	if err != nil {
 		return fmt.Errorf("failed to push changes to repos: %w", err)

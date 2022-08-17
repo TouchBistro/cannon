@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,7 +42,8 @@ func (repo *Repository) Path() string {
 // Prepare prepares the repo for use and returns a Repository instance.
 // If the repo does not exist, it will be cloned to dir. Otherwise, any
 // uncommitted changes will be discarded and the base branch will be updated.
-func Prepare(name, dir, baseBranch string, logger progress.Logger) (*Repository, error) {
+func Prepare(ctx context.Context, name, dir, baseBranch string) (*Repository, error) {
+	tracker := progress.TrackerFromContext(ctx)
 	path := filepath.Join(dir, name)
 	repo := &Repository{name: name, path: path, baseBranch: baseBranch}
 	skipCleanup := false
@@ -50,14 +52,14 @@ func Prepare(name, dir, baseBranch string, logger progress.Logger) (*Repository,
 		// If the repo doesn't exist all we need to do is clone it.
 		// Don't need to worry about any dirty state.
 		skipCleanup = true
-		logger.Debugf("Repo %s does not exist, cloning", name)
-		repo.r, err = git.PlainClone(path, false, &git.CloneOptions{
+		tracker.Debugf("Repo %s does not exist, cloning", name)
+		repo.r, err = git.PlainCloneContext(ctx, path, false, &git.CloneOptions{
 			URL: fmt.Sprintf("git@github.com:%s.git", name),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to clone %s to %s: %w", name, dir, err)
 		}
-		logger.Debugf("Cloned repo %s to %s", name, dir)
+		tracker.Debugf("Cloned repo %s to %s", name, dir)
 	} else {
 		repo.r, err = git.PlainOpen(path)
 		if err != nil {
@@ -81,7 +83,7 @@ func Prepare(name, dir, baseBranch string, logger progress.Logger) (*Repository,
 	// cannon can always get it into a clean state.
 
 	// First, clean the current branch by discarding any working state.
-	logger.Debugf("Cleaning and updating repo %s", name)
+	tracker.Debugf("Cleaning and updating repo %s", name)
 	err = repo.w.Clean(&git.CleanOptions{Dir: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to clean repo %s: %w", name, err)
@@ -108,11 +110,11 @@ func Prepare(name, dir, baseBranch string, logger progress.Logger) (*Repository,
 	}
 
 	// Update branch.
-	err = repo.w.Pull(&git.PullOptions{SingleBranch: true})
+	err = repo.w.PullContext(ctx, &git.PullOptions{SingleBranch: true})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return nil, fmt.Errorf("failed to pull changes from remote for repo %s: %w", name, err)
 	}
-	logger.Debugf("Updated repo %s", name)
+	tracker.Debugf("Updated repo %s", name)
 	return repo, nil
 }
 
@@ -160,8 +162,8 @@ func (repo *Repository) CommitChanges(msg string) error {
 	return nil
 }
 
-func (repo *Repository) Push() error {
-	err := repo.r.Push(&git.PushOptions{RemoteName: "origin"})
+func (repo *Repository) Push(ctx context.Context) error {
+	err := repo.r.PushContext(ctx, &git.PushOptions{RemoteName: "origin"})
 	if err != nil {
 		return fmt.Errorf("failed to push to remote in repo %s: %w", repo.name, err)
 	}
@@ -196,7 +198,7 @@ func CreatePRURL(repo, branch string) string {
 	return fmt.Sprintf("https://github.com/%s/pull/new/%s", repo, branch)
 }
 
-func (repo *Repository) CreatePR(branch, desc string) (string, error) {
+func (repo *Repository) CreatePR(ctx context.Context, branch, desc string) (string, error) {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(map[string]string{
 		"title": branch,
@@ -209,7 +211,7 @@ func (repo *Repository) CreatePR(branch, desc string) (string, error) {
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/pulls", repo.name)
-	req, err := http.NewRequest("POST", url, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &buf)
 	if err != nil {
 		return "", fmt.Errorf("failed to create POST request to GitHub API: %w", err)
 	}
