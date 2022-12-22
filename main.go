@@ -20,7 +20,7 @@ import (
 	"github.com/TouchBistro/goutils/spinner"
 	"github.com/mattn/go-isatty"
 	flag "github.com/spf13/pflag"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type options struct {
@@ -203,7 +203,7 @@ func execute() error {
 		repo := repos[i]
 		tracker := progress.TrackerFromContext(ctx)
 		tracker.Debugf("Committing changes to repo %s", repo.Name())
-		return repo.CommitChanges(opts.commitMsg)
+		return repo.CommitChanges(ctx, opts.commitMsg)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to commit changes to repos: %w", err)
