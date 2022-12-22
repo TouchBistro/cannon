@@ -155,16 +155,11 @@ func execute() error {
 		return fmt.Errorf("failed to prepare repos: %w", err)
 	}
 
-	type actionResult struct {
-		repoIndex int
-		msgs      []string
-	}
-
-	actionResults, err := progress.RunParallelT(ctx, progress.RunParallelOptions{
+	repoMsgs, err := progress.RunParallelT(ctx, progress.RunParallelOptions{
 		Message:       "Running actions on repos",
 		Count:         len(repos),
 		CancelOnError: true,
-	}, func(ctx context.Context, i int) (actionResult, error) {
+	}, func(ctx context.Context, i int) ([]string, error) {
 		repo := repos[i]
 
 		tracker := progress.TrackerFromContext(ctx)
@@ -176,23 +171,18 @@ func execute() error {
 			"REPO_OWNER": parts[0],
 			"REPO_NAME":  parts[1],
 		}
-		args := action.Arguments{Variables: vars}
-		res := actionResult{repoIndex: i, msgs: make([]string, 0, len(actions))}
-		for _, a := range actions {
-			msg, err := a.Run(ctx, repo, args)
+		msgs := make([]string, len(actions))
+		for j, a := range actions {
+			msg, err := a.Run(ctx, repo, action.Arguments{Variables: vars})
 			if err != nil {
-				return res, err
+				return nil, err
 			}
-			res.msgs = append(res.msgs, msg)
+			msgs[j] = msg
 		}
-		return res, nil
+		return msgs, nil
 	})
 	if err != nil {
 		return fmt.Errorf("failed to perform actions on repos: %w", err)
-	}
-	repoMsgs := make(map[int][]string)
-	for _, res := range actionResults {
-		repoMsgs[res.repoIndex] = res.msgs
 	}
 
 	err = progress.RunParallel(ctx, progress.RunParallelOptions{
@@ -232,11 +222,7 @@ func execute() error {
 		tracker.Debugf("Creating PR for repo %s", repo.Name())
 		var desc strings.Builder
 		desc.WriteString("Changes applied by commit-cannon:\n")
-		msgs, ok := repoMsgs[i]
-		if !ok {
-			return "", fmt.Errorf("impossible: no messages found for repo %s", repo.Name())
-		}
-		for _, m := range msgs {
+		for _, m := range repoMsgs[i] {
 			desc.WriteString("  * ")
 			desc.WriteString(m)
 			desc.WriteByte('\n')
