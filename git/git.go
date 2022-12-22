@@ -137,15 +137,15 @@ func (repo *Repository) CreateBranch(branch string) error {
 }
 
 // CommitChanges will stage all changes and commit them.
-func (repo *Repository) CommitChanges(msg string) error {
+func (repo *Repository) CommitChanges(ctx context.Context, msg string) error {
 	// Shell out to git add since there were issues trying to do it will the git module.
 	var stderr bytes.Buffer
 	cmd := command.New(command.WithDir(repo.path), command.WithStderr(&stderr))
-	if err := cmd.Exec("git", "add", "."); err != nil {
+	if err := cmd.Exec(ctx, "git", "add", "."); err != nil {
 		return fmt.Errorf("failed to stage changes: %s: %w", stderr.String(), err)
 	}
 
-	username, email, err := user()
+	username, email, err := user(ctx)
 	if err != nil {
 		return err
 	}
@@ -171,10 +171,10 @@ func (repo *Repository) Push(ctx context.Context) error {
 }
 
 // user gets the current configured git user.
-func user() (username, email string, err error) {
+func user(ctx context.Context) (username, email string, err error) {
 	var outbuf, errbuf bytes.Buffer
 	cmd := command.New(command.WithStdout(&outbuf), command.WithStderr(&errbuf))
-	err = cmd.Exec("git", "config", "--get", "--global", "user.name")
+	err = cmd.Exec(ctx, "git", "config", "--get", "--global", "user.name")
 	if err != nil {
 		err = fmt.Errorf("failed to get git user name: %s: %w", errbuf.String(), err)
 		return
@@ -183,7 +183,7 @@ func user() (username, email string, err error) {
 
 	outbuf.Reset()
 	errbuf.Reset()
-	err = cmd.Exec("git", "config", "--get", "--global", "user.email")
+	err = cmd.Exec(ctx, "git", "config", "--get", "--global", "user.email")
 	if err != nil {
 		err = fmt.Errorf("failed to get git user email: %s: %w", errbuf.String(), err)
 		return
