@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,7 +17,7 @@ import (
 	"github.com/TouchBistro/cannon/action"
 	"github.com/TouchBistro/cannon/git"
 	"github.com/TouchBistro/goutils/fatal"
-	"github.com/TouchBistro/goutils/log"
+	"github.com/TouchBistro/goutils/logutil"
 	"github.com/TouchBistro/goutils/progress"
 	"github.com/TouchBistro/goutils/spinner"
 	"github.com/mattn/go-isatty"
@@ -50,17 +52,6 @@ func execute() error {
 	flag.BoolVarP(&opts.verbose, "verbose", "v", false, "Enable verbose logging")
 	flag.BoolVar(&opts.clean, "clean", false, "Clean cannon cache directory")
 	flag.Parse()
-
-	level := log.LevelInfo
-	if opts.verbose {
-		level = log.LevelDebug
-	}
-	logger := log.New(
-		log.WithFormatter(&log.TextFormatter{
-			Pretty: isatty.IsTerminal(os.Stderr.Fd()),
-		}),
-		log.WithLevel(level),
-	)
 
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
@@ -122,10 +113,22 @@ func execute() error {
 		cancel()
 	}()
 
-	tracker := &spinner.Tracker{
-		OutputLogger:    logger,
-		PersistMessages: opts.verbose,
+	level := slog.LevelInfo
+	if opts.verbose {
+		level = slog.LevelDebug
 	}
+	stderrTerminal := isatty.IsTerminal(os.Stderr.Fd())
+	tracker := spinner.NewTracker(spinner.TrackerOptions{
+		PersistMessages: opts.verbose,
+		DisableSpinner:  !stderrTerminal,
+		NewHandler: func(w io.Writer) slog.Handler {
+			if stderrTerminal {
+				return logutil.NewPrettyHandler(w, &logutil.PrettyHandlerOptions{Level: level})
+			}
+			return slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})
+		},
+	})
+
 	ctx = progress.ContextWithTracker(ctx, tracker)
 	// Create a random number suffix so each branch is unique.
 	b := make([]byte, 8)
@@ -199,7 +202,7 @@ func execute() error {
 		return fmt.Errorf("failed to commit changes to repos: %w", err)
 	}
 
-	logger.Info("Changes applied")
+	tracker.Info("Changes applied")
 	if opts.noPush {
 		return nil
 	}
